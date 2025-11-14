@@ -98,6 +98,8 @@ CREATE OR REPLACE FUNCTION func_upsert_contact_from_webhook(
   p_condensed_memory     JSONB DEFAULT '[]'::jsonb
 )
 RETURNS void AS $$
+DECLARE
+  v_is_new_contact BOOLEAN;
 BEGIN
   -- Validação de parâmetros obrigatórios
   IF p_inbox_id IS NULL OR p_owner_wallet_id IS NULL OR p_wallet_id IS NULL THEN
@@ -128,6 +130,11 @@ BEGIN
     credits_used = COALESCE(EXCLUDED.credits_used, "0a_inbox_whatsapp".credits_used),
     remaining_credits = COALESCE(EXCLUDED.remaining_credits, "0a_inbox_whatsapp".remaining_credits),
     updated_at = NOW();
+
+  -- Verifica se o contato já existe ANTES do UPSERT
+  SELECT NOT EXISTS(
+    SELECT 1 FROM "1a_whatsapp_user_contact" WHERE wallet_id = p_wallet_id
+  ) INTO v_is_new_contact;
 
   -- UPSERT Contato (atômico e idempotente)
   INSERT INTO "1a_whatsapp_user_contact" (
@@ -162,6 +169,22 @@ BEGIN
     tags = COALESCE(EXCLUDED.tags, "1a_whatsapp_user_contact".tags),
     condensed_memory = COALESCE(EXCLUDED.condensed_memory, "1a_whatsapp_user_contact".condensed_memory),
     updated_at = NOW();
+
+  -- Se é um contato novo, incrementa o contador
+  IF v_is_new_contact THEN
+    -- Incrementa o contador de contatos da inbox
+    UPDATE "0b_inbox_counters"
+    SET contact_count = contact_count + 1
+    WHERE inbox_id = p_inbox_id;
+
+    -- Se o contador não existe, cria um novo
+    IF NOT FOUND THEN
+      INSERT INTO "0b_inbox_counters" (inbox_id, contact_count, form_count, scheduling_count)
+      VALUES (p_inbox_id, 1, 0, 0)
+      ON CONFLICT (inbox_id) DO UPDATE
+      SET contact_count = "0b_inbox_counters".contact_count + 1;
+    END IF;
+  END IF;
 
 EXCEPTION
   WHEN OTHERS THEN
@@ -561,6 +584,8 @@ CREATE OR REPLACE FUNCTION func_upsert_contact_from_webhook(
   p_condensed_memory     JSONB DEFAULT '[]'::jsonb
 )
 RETURNS void AS $$
+DECLARE
+  v_is_new_contact BOOLEAN;
 BEGIN
   -- Validação de parâmetros obrigatórios
   IF p_inbox_id IS NULL OR p_owner_wallet_id IS NULL OR p_wallet_id IS NULL THEN
@@ -591,6 +616,11 @@ BEGIN
     credits_used = COALESCE(EXCLUDED.credits_used, "0a_inbox_whatsapp".credits_used),
     remaining_credits = COALESCE(EXCLUDED.remaining_credits, "0a_inbox_whatsapp".remaining_credits),
     updated_at = NOW();
+
+  -- Verifica se o contato já existe ANTES do UPSERT
+  SELECT NOT EXISTS(
+    SELECT 1 FROM "1a_whatsapp_user_contact" WHERE wallet_id = p_wallet_id
+  ) INTO v_is_new_contact;
 
   -- UPSERT Contato (atômico e idempotente)
   INSERT INTO "1a_whatsapp_user_contact" (
@@ -625,6 +655,22 @@ BEGIN
     tags = COALESCE(EXCLUDED.tags, "1a_whatsapp_user_contact".tags),
     condensed_memory = COALESCE(EXCLUDED.condensed_memory, "1a_whatsapp_user_contact".condensed_memory),
     updated_at = NOW();
+
+  -- Se é um contato novo, incrementa o contador
+  IF v_is_new_contact THEN
+    -- Incrementa o contador de contatos da inbox
+    UPDATE "0b_inbox_counters"
+    SET contact_count = contact_count + 1
+    WHERE inbox_id = p_inbox_id;
+
+    -- Se o contador não existe, cria um novo
+    IF NOT FOUND THEN
+      INSERT INTO "0b_inbox_counters" (inbox_id, contact_count, form_count, scheduling_count)
+      VALUES (p_inbox_id, 1, 0, 0)
+      ON CONFLICT (inbox_id) DO UPDATE
+      SET contact_count = "0b_inbox_counters".contact_count + 1;
+    END IF;
+  END IF;
 
 EXCEPTION
   WHEN OTHERS THEN
