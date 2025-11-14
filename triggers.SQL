@@ -21,6 +21,17 @@
 --
 -- 2.5 TRIGGERS DE AUTOMAÇÃO DE MENSAGENS
 --     └─ trg_auto_populate_message ........... [2b_conversation_messages] → Popula campos automáticos
+--
+-- 2.6 TRIGGERS DE VALIDAÇÃO DE FORMULÁRIO COMPLETO
+--     └─ trg_check_form_complete_3a .......... [3a_customer_root_record] → Valida completude
+--     └─ trg_check_form_complete_3b .......... [3b_cell_phone_linked_service_sheet] → Valida completude
+--     └─ trg_check_form_complete_3c .......... [3c_gender] → Valida completude
+--     └─ trg_check_form_complete_3d .......... [3d_birth_date] → Valida completude
+--     └─ trg_check_form_complete_3e .......... [3e_email] → Valida completude
+--     └─ trg_check_form_complete_3f .......... [3f_landline_phone] → Valida completude
+--     └─ trg_check_form_complete_3g .......... [3g_cpf] → Valida completude
+--     └─ trg_check_form_complete_3h .......... [3h_rg] → Valida completude
+--     └─ trg_check_form_complete_3i .......... [3i_endereco_br] → Valida completude
 -- =================================================================================================
 
 
@@ -235,5 +246,128 @@ CREATE TRIGGER trg_auto_populate_message
     BEFORE INSERT OR UPDATE ON "2b_conversation_messages"
     FOR EACH ROW
     EXECUTE FUNCTION func_auto_populate_message_fields();
+
+
+-- -------------------------------------------------------------------------------------------------
+-- 2.6 TRIGGERS DE VALIDAÇÃO DE FORMULÁRIO COMPLETO
+-- -------------------------------------------------------------------------------------------------
+
+-- ╔═════════════════════════════════════════════════════════════════════════════════════════════╗
+-- ║ TRIGGERS: trg_check_form_complete_*                                                         ║
+-- ╠═════════════════════════════════════════════════════════════════════════════════════════════╣
+-- ║ TABELAS ALVO: Todas as tabelas do NÍVEL 3 (3a até 3i)                                      ║
+-- ║ EVENTO: AFTER INSERT OR UPDATE                                                              ║
+-- ║ FUNÇÃO: func_update_form_counter()                                                          ║
+-- ║                                                                                             ║
+-- ║ PROPÓSITO:                                                                                  ║
+-- ║   Monitora mudanças em qualquer campo da ficha de cliente e automaticamente:                ║
+-- ║   1. Verifica se a ficha está completa baseado em required_data_form da inbox               ║
+-- ║   2. Atualiza o campo is_form_complete na tabela 3a_customer_root_record                    ║
+-- ║   3. Incrementa/decrementa o contador form_count em 0b_inbox_counters                       ║
+-- ║                                                                                             ║
+-- ║ COMPORTAMENTO:                                                                              ║
+-- ║   Quando qualquer dado da ficha é inserido ou atualizado:                                   ║
+-- ║   → Trigger dispara APÓS a operação (garantindo dados consistentes)                         ║
+-- ║   → Função verifica completude baseada nas regras JSON da inbox                             ║
+-- ║   → Se mudou de estado (incompleto→completo ou vice-versa), atualiza contador               ║
+-- ║                                                                                             ║
+-- ║ EXEMPLO DE FLUXO:                                                                           ║
+-- ║   1. Inbox configurada com: {"treatment_name": {"required": true}, "cpf": {"required": true}}│
+-- ║   2. INSERT em 3a_customer_root_record com treatment_name                                   ║
+-- ║      → Trigger dispara → Ficha incompleta (falta CPF) → form_count não muda                 ║
+-- ║   3. INSERT em 3g_cpf com CPF do cliente                                                    ║
+-- ║      → Trigger dispara → Ficha completa! → form_count += 1 🎉                                ║
+-- ║                                                                                             ║
+-- ║ TABELAS MONITORADAS:                                                                        ║
+-- ║   • 3a_customer_root_record ......... Campos: treatment_name, legal_name_complete, etc.     ║
+-- ║   • 3b_cell_phone_linked_service .... Campo: cell_phone                                     ║
+-- ║   • 3c_gender ....................... Campo: gender                                         ║
+-- ║   • 3d_birth_date ................... Campo: birth_date                                     ║
+-- ║   • 3e_email ........................ Campo: email                                          ║
+-- ║   • 3f_landline_phone ............... Campo: phone_number                                   ║
+-- ║   • 3g_cpf .......................... Campo: cpf                                            ║
+-- ║   • 3h_rg ........................... Campo: rg_numero                                      ║
+-- ║   • 3i_endereco_br .................. Campos: logradouro, cidade                            ║
+-- ╚═════════════════════════════════════════════════════════════════════════════════════════════╝
+
+-- Tabela 3a: Raiz da ficha
+DROP TRIGGER IF EXISTS trg_check_form_complete_3a ON "3a_customer_root_record";
+
+CREATE TRIGGER trg_check_form_complete_3a
+    AFTER INSERT OR UPDATE ON "3a_customer_root_record"
+    FOR EACH ROW
+    EXECUTE FUNCTION func_update_form_counter();
+
+
+-- Tabela 3b: Telefones celulares
+DROP TRIGGER IF EXISTS trg_check_form_complete_3b ON "3b_cell_phone_linked_service_sheet";
+
+CREATE TRIGGER trg_check_form_complete_3b
+    AFTER INSERT OR UPDATE ON "3b_cell_phone_linked_service_sheet"
+    FOR EACH ROW
+    EXECUTE FUNCTION func_update_form_counter();
+
+
+-- Tabela 3c: Gênero
+DROP TRIGGER IF EXISTS trg_check_form_complete_3c ON "3c_gender";
+
+CREATE TRIGGER trg_check_form_complete_3c
+    AFTER INSERT OR UPDATE ON "3c_gender"
+    FOR EACH ROW
+    EXECUTE FUNCTION func_update_form_counter();
+
+
+-- Tabela 3d: Data de nascimento
+DROP TRIGGER IF EXISTS trg_check_form_complete_3d ON "3d_birth_date";
+
+CREATE TRIGGER trg_check_form_complete_3d
+    AFTER INSERT OR UPDATE ON "3d_birth_date"
+    FOR EACH ROW
+    EXECUTE FUNCTION func_update_form_counter();
+
+
+-- Tabela 3e: E-mails
+DROP TRIGGER IF EXISTS trg_check_form_complete_3e ON "3e_email";
+
+CREATE TRIGGER trg_check_form_complete_3e
+    AFTER INSERT OR UPDATE ON "3e_email"
+    FOR EACH ROW
+    EXECUTE FUNCTION func_update_form_counter();
+
+
+-- Tabela 3f: Telefones fixos
+DROP TRIGGER IF EXISTS trg_check_form_complete_3f ON "3f_landline_phone";
+
+CREATE TRIGGER trg_check_form_complete_3f
+    AFTER INSERT OR UPDATE ON "3f_landline_phone"
+    FOR EACH ROW
+    EXECUTE FUNCTION func_update_form_counter();
+
+
+-- Tabela 3g: CPF
+DROP TRIGGER IF EXISTS trg_check_form_complete_3g ON "3g_cpf";
+
+CREATE TRIGGER trg_check_form_complete_3g
+    AFTER INSERT OR UPDATE ON "3g_cpf"
+    FOR EACH ROW
+    EXECUTE FUNCTION func_update_form_counter();
+
+
+-- Tabela 3h: RG
+DROP TRIGGER IF EXISTS trg_check_form_complete_3h ON "3h_rg";
+
+CREATE TRIGGER trg_check_form_complete_3h
+    AFTER INSERT OR UPDATE ON "3h_rg"
+    FOR EACH ROW
+    EXECUTE FUNCTION func_update_form_counter();
+
+
+-- Tabela 3i: Endereço
+DROP TRIGGER IF EXISTS trg_check_form_complete_3i ON "3i_endereco_br";
+
+CREATE TRIGGER trg_check_form_complete_3i
+    AFTER INSERT OR UPDATE ON "3i_endereco_br"
+    FOR EACH ROW
+    EXECUTE FUNCTION func_update_form_counter();
 
 

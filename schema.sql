@@ -177,6 +177,9 @@ CREATE TABLE IF NOT EXISTS "3a_customer_root_record" (
     -- Espelho de todos os campos da ficha
     identity_data       JSONB NOT NULL DEFAULT '{}'::jsonb, 
   
+    -- Controle de formulário completo (baseado em required_data_form da inbox)
+    is_form_complete    BOOLEAN NOT NULL DEFAULT FALSE,
+
     created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
