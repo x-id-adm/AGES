@@ -83,7 +83,15 @@ CREATE TABLE IF NOT EXISTS "0b_inbox_counters" (
     form_count        INT NOT NULL DEFAULT 0, 
     
     -- Conta o numero de agendamentos totais realizados
-    scheduling_count  INT NOT NULL DEFAULT 0  
+    scheduling_count  INT NOT NULL DEFAULT 0,
+
+    -- Contadores de status de atendimentos
+    scheduled_count   INT NOT NULL DEFAULT 0,  -- Status mudado pelo Agente de IA
+    confirmed_count   INT NOT NULL DEFAULT 0,  -- Status mudado pelo Agente de IA
+    completed_count   INT NOT NULL DEFAULT 0,  -- Status mudado pelo Humano
+    cancelled_count   INT NOT NULL DEFAULT 0,  -- Status mudado pelo Humano/IA
+    rescheduled_count INT NOT NULL DEFAULT 0,  -- Status mudado pelo Humano
+    no_show_count     INT NOT NULL DEFAULT 0   -- Status mudado pelo Humano
 );
 
 -- ================================================================

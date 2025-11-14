@@ -1446,3 +1446,238 @@ END;
 $$ LANGUAGE plpgsql;
 
 
+-- -------------------------------------------------------------------------------------------------
+-- 1.7 CONTADORES DE STATUS DE ATENDIMENTOS
+-- -------------------------------------------------------------------------------------------------
+
+-- ┌─────────────────────────────────────────────────────────────────────────────────────────────┐
+-- │ FUNÇÃO: func_update_appointment_status_counter                                              │
+-- ├─────────────────────────────────────────────────────────────────────────────────────────────┤
+-- │ PROPÓSITO:                                                                                  │
+-- │   Atualiza automaticamente os contadores de status de atendimentos quando um atendimento    │
+-- │   é criado ou tem seu status alterado.                                                      │
+-- │                                                                                             │
+-- │ TIPO:                                                                                       │
+-- │   TRIGGER FUNCTION - Invocada automaticamente após INSERT/UPDATE em 4a_customer_service_history│
+-- │                                                                                             │
+-- │ RETORNO:                                                                                    │
+-- │   TRIGGER - Retorna NEW para permitir continuação da operação                               │
+-- │                                                                                             │
+-- │ LÓGICA:                                                                                     │
+-- │   CASO INSERT (novo atendimento):                                                           │
+-- │     → Incrementa o contador correspondente ao novo status                                   │
+-- │                                                                                             │
+-- │   CASO UPDATE (mudança de status):                                                          │
+-- │     → Decrementa o contador do status antigo                                                │
+-- │     → Incrementa o contador do novo status                                                  │
+-- │                                                                                             │
+-- │ STATUS MAPEADOS:                                                                            │
+-- │   • 'Scheduled' .......... scheduled_count (mudado pelo Agente de IA)                       │
+-- │   • 'Confirmed' .......... confirmed_count (mudado pelo Agente de IA)                       │
+-- │   • 'Completed' .......... completed_count (mudado pelo Humano)                             │
+-- │   • 'Cancelled' .......... cancelled_count (mudado pelo Humano/IA)                          │
+-- │   • 'Rescheduled' ........ rescheduled_count (mudado pelo Humano)                           │
+-- │   • 'No_Show' ............ no_show_count (mudado pelo Humano)                               │
+-- │                                                                                             │
+-- │ TABELAS AFETADAS:                                                                           │
+-- │   • 0b_inbox_counters ..... (UPDATE) Incrementa/decrementa contadores de status             │
+-- │                                                                                             │
+-- │ CARACTERÍSTICAS:                                                                            │
+-- │   ✓ Atômico - Operações de incremento/decremento são thread-safe                            │
+-- │   ✓ Inteligente - Só atualiza quando há mudança real de status                              │
+-- │   ✓ Bidirecional - Detecta inserção e atualização de status                                 │
+-- │   ✓ Resiliente - Não falha se contador não existir (cria automaticamente)                   │
+-- │   ✓ Seguro - Proteção contra valores negativos com GREATEST()                               │
+-- │                                                                                             │
+-- │ EXEMPLO DE FLUXO:                                                                           │
+-- │   1. INSERT novo atendimento com status 'Scheduled'                                         │
+-- │      → scheduled_count += 1                                                                 │
+-- │                                                                                             │
+-- │   2. UPDATE status de 'Scheduled' para 'Confirmed'                                          │
+-- │      → scheduled_count -= 1                                                                 │
+-- │      → confirmed_count += 1                                                                 │
+-- │                                                                                             │
+-- │   3. UPDATE status de 'Confirmed' para 'Completed'                                          │
+-- │      → confirmed_count -= 1                                                                 │
+-- │      → completed_count += 1                                                                 │
+-- └─────────────────────────────────────────────────────────────────────────────────────────────┘
+CREATE OR REPLACE FUNCTION func_update_appointment_status_counter()
+RETURNS TRIGGER AS $$
+DECLARE
+    v_inbox_id UUID;
+    v_old_status TEXT;
+    v_new_status TEXT;
+BEGIN
+    -- Identifica o inbox_id do atendimento
+    v_inbox_id := NEW.inbox_id;
+
+    -- Inicializa o novo status
+    v_new_status := NEW.service_status;
+
+    -- Para operações de INSERT
+    IF (TG_OP = 'INSERT') THEN
+        -- Incrementa o contador do novo status
+        CASE v_new_status
+            WHEN 'Scheduled' THEN
+                UPDATE "0b_inbox_counters"
+                SET scheduled_count = scheduled_count + 1
+                WHERE inbox_id = v_inbox_id;
+
+            WHEN 'Confirmed' THEN
+                UPDATE "0b_inbox_counters"
+                SET confirmed_count = confirmed_count + 1
+                WHERE inbox_id = v_inbox_id;
+
+            WHEN 'Completed' THEN
+                UPDATE "0b_inbox_counters"
+                SET completed_count = completed_count + 1
+                WHERE inbox_id = v_inbox_id;
+
+            WHEN 'Cancelled' THEN
+                UPDATE "0b_inbox_counters"
+                SET cancelled_count = cancelled_count + 1
+                WHERE inbox_id = v_inbox_id;
+
+            WHEN 'Rescheduled' THEN
+                UPDATE "0b_inbox_counters"
+                SET rescheduled_count = rescheduled_count + 1
+                WHERE inbox_id = v_inbox_id;
+
+            WHEN 'No_Show' THEN
+                UPDATE "0b_inbox_counters"
+                SET no_show_count = no_show_count + 1
+                WHERE inbox_id = v_inbox_id;
+        END CASE;
+
+        -- Se o contador não existe, cria um novo
+        IF NOT FOUND THEN
+            INSERT INTO "0b_inbox_counters" (
+                inbox_id,
+                contact_count,
+                form_count,
+                scheduling_count,
+                scheduled_count,
+                confirmed_count,
+                completed_count,
+                cancelled_count,
+                rescheduled_count,
+                no_show_count
+            )
+            VALUES (
+                v_inbox_id,
+                0,
+                0,
+                0,
+                CASE WHEN v_new_status = 'Scheduled' THEN 1 ELSE 0 END,
+                CASE WHEN v_new_status = 'Confirmed' THEN 1 ELSE 0 END,
+                CASE WHEN v_new_status = 'Completed' THEN 1 ELSE 0 END,
+                CASE WHEN v_new_status = 'Cancelled' THEN 1 ELSE 0 END,
+                CASE WHEN v_new_status = 'Rescheduled' THEN 1 ELSE 0 END,
+                CASE WHEN v_new_status = 'No_Show' THEN 1 ELSE 0 END
+            )
+            ON CONFLICT (inbox_id) DO UPDATE SET
+                scheduled_count = CASE WHEN v_new_status = 'Scheduled'
+                    THEN "0b_inbox_counters".scheduled_count + 1
+                    ELSE "0b_inbox_counters".scheduled_count END,
+                confirmed_count = CASE WHEN v_new_status = 'Confirmed'
+                    THEN "0b_inbox_counters".confirmed_count + 1
+                    ELSE "0b_inbox_counters".confirmed_count END,
+                completed_count = CASE WHEN v_new_status = 'Completed'
+                    THEN "0b_inbox_counters".completed_count + 1
+                    ELSE "0b_inbox_counters".completed_count END,
+                cancelled_count = CASE WHEN v_new_status = 'Cancelled'
+                    THEN "0b_inbox_counters".cancelled_count + 1
+                    ELSE "0b_inbox_counters".cancelled_count END,
+                rescheduled_count = CASE WHEN v_new_status = 'Rescheduled'
+                    THEN "0b_inbox_counters".rescheduled_count + 1
+                    ELSE "0b_inbox_counters".rescheduled_count END,
+                no_show_count = CASE WHEN v_new_status = 'No_Show'
+                    THEN "0b_inbox_counters".no_show_count + 1
+                    ELSE "0b_inbox_counters".no_show_count END;
+        END IF;
+
+    -- Para operações de UPDATE
+    ELSIF (TG_OP = 'UPDATE') THEN
+        v_old_status := OLD.service_status;
+
+        -- Só atualiza se o status mudou
+        IF v_old_status IS DISTINCT FROM v_new_status THEN
+            -- Decrementa o contador do status antigo
+            CASE v_old_status
+                WHEN 'Scheduled' THEN
+                    UPDATE "0b_inbox_counters"
+                    SET scheduled_count = GREATEST(scheduled_count - 1, 0)
+                    WHERE inbox_id = v_inbox_id;
+
+                WHEN 'Confirmed' THEN
+                    UPDATE "0b_inbox_counters"
+                    SET confirmed_count = GREATEST(confirmed_count - 1, 0)
+                    WHERE inbox_id = v_inbox_id;
+
+                WHEN 'Completed' THEN
+                    UPDATE "0b_inbox_counters"
+                    SET completed_count = GREATEST(completed_count - 1, 0)
+                    WHERE inbox_id = v_inbox_id;
+
+                WHEN 'Cancelled' THEN
+                    UPDATE "0b_inbox_counters"
+                    SET cancelled_count = GREATEST(cancelled_count - 1, 0)
+                    WHERE inbox_id = v_inbox_id;
+
+                WHEN 'Rescheduled' THEN
+                    UPDATE "0b_inbox_counters"
+                    SET rescheduled_count = GREATEST(rescheduled_count - 1, 0)
+                    WHERE inbox_id = v_inbox_id;
+
+                WHEN 'No_Show' THEN
+                    UPDATE "0b_inbox_counters"
+                    SET no_show_count = GREATEST(no_show_count - 1, 0)
+                    WHERE inbox_id = v_inbox_id;
+            END CASE;
+
+            -- Incrementa o contador do novo status
+            CASE v_new_status
+                WHEN 'Scheduled' THEN
+                    UPDATE "0b_inbox_counters"
+                    SET scheduled_count = scheduled_count + 1
+                    WHERE inbox_id = v_inbox_id;
+
+                WHEN 'Confirmed' THEN
+                    UPDATE "0b_inbox_counters"
+                    SET confirmed_count = confirmed_count + 1
+                    WHERE inbox_id = v_inbox_id;
+
+                WHEN 'Completed' THEN
+                    UPDATE "0b_inbox_counters"
+                    SET completed_count = completed_count + 1
+                    WHERE inbox_id = v_inbox_id;
+
+                WHEN 'Cancelled' THEN
+                    UPDATE "0b_inbox_counters"
+                    SET cancelled_count = cancelled_count + 1
+                    WHERE inbox_id = v_inbox_id;
+
+                WHEN 'Rescheduled' THEN
+                    UPDATE "0b_inbox_counters"
+                    SET rescheduled_count = rescheduled_count + 1
+                    WHERE inbox_id = v_inbox_id;
+
+                WHEN 'No_Show' THEN
+                    UPDATE "0b_inbox_counters"
+                    SET no_show_count = no_show_count + 1
+                    WHERE inbox_id = v_inbox_id;
+            END CASE;
+        END IF;
+    END IF;
+
+    RETURN NEW;
+
+EXCEPTION
+    WHEN OTHERS THEN
+        RAISE WARNING 'Erro em func_update_appointment_status_counter para inbox_id %: % - %',
+                      v_inbox_id, SQLERRM, SQLSTATE;
+        RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+

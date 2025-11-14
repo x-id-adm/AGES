@@ -371,3 +371,56 @@ CREATE TRIGGER trg_check_form_complete_3i
     EXECUTE FUNCTION func_update_form_counter();
 
 
+-- -------------------------------------------------------------------------------------------------
+-- 2.7 TRIGGERS DE CONTADORES DE STATUS DE ATENDIMENTOS
+-- -------------------------------------------------------------------------------------------------
+
+-- ╔═════════════════════════════════════════════════════════════════════════════════════════════╗
+-- ║ TRIGGER: trg_update_appointment_status_counter                                              ║
+-- ╠═════════════════════════════════════════════════════════════════════════════════════════════╣
+-- ║ TABELA ALVO: 4a_customer_service_history                                                    ║
+-- ║ EVENTO: AFTER INSERT OR UPDATE                                                              ║
+-- ║ FUNÇÃO: func_update_appointment_status_counter()                                            ║
+-- ║                                                                                             ║
+-- ║ PROPÓSITO:                                                                                  ║
+-- ║   Monitora mudanças na tabela de atendimentos e automaticamente atualiza os contadores      ║
+-- ║   de status em 0b_inbox_counters quando:                                                    ║
+-- ║   • Um novo atendimento é criado (INSERT)                                                   ║
+-- ║   • O status de um atendimento é alterado (UPDATE)                                          ║
+-- ║                                                                                             ║
+-- ║ COMPORTAMENTO:                                                                              ║
+-- ║   INSERT:                                                                                   ║
+-- ║   → Incrementa contador do status do novo atendimento                                       ║
+-- ║                                                                                             ║
+-- ║   UPDATE (quando service_status muda):                                                      ║
+-- ║   → Decrementa contador do status antigo                                                    ║
+-- ║   → Incrementa contador do novo status                                                      ║
+-- ║                                                                                             ║
+-- ║ CONTADORES ATUALIZADOS:                                                                     ║
+-- ║   • scheduled_count ..... Atendimentos com status 'Scheduled'                               ║
+-- ║   • confirmed_count ..... Atendimentos com status 'Confirmed'                               ║
+-- ║   • completed_count ..... Atendimentos com status 'Completed'                               ║
+-- ║   • cancelled_count ..... Atendimentos com status 'Cancelled'                               ║
+-- ║   • rescheduled_count ... Atendimentos com status 'Rescheduled'                             ║
+-- ║   • no_show_count ....... Atendimentos com status 'No_Show'                                 ║
+-- ║                                                                                             ║
+-- ║ EXEMPLO DE FLUXO:                                                                           ║
+-- ║   1. INSERT atendimento com status 'Scheduled'                                              ║
+-- ║      → scheduled_count: 0 → 1                                                               ║
+-- ║                                                                                             ║
+-- ║   2. UPDATE status: 'Scheduled' → 'Confirmed'                                               ║
+-- ║      → scheduled_count: 1 → 0                                                               ║
+-- ║      → confirmed_count: 0 → 1                                                               ║
+-- ║                                                                                             ║
+-- ║   3. UPDATE status: 'Confirmed' → 'Completed'                                               ║
+-- ║      → confirmed_count: 1 → 0                                                               ║
+-- ║      → completed_count: 0 → 1                                                               ║
+-- ╚═════════════════════════════════════════════════════════════════════════════════════════════╝
+DROP TRIGGER IF EXISTS trg_update_appointment_status_counter ON "4a_customer_service_history";
+
+CREATE TRIGGER trg_update_appointment_status_counter
+    AFTER INSERT OR UPDATE ON "4a_customer_service_history"
+    FOR EACH ROW
+    EXECUTE FUNCTION func_update_appointment_status_counter();
+
+
