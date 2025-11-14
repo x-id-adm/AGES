@@ -35,6 +35,10 @@
 --
 -- 1.5 UTILITÁRIOS AUTOMÁTICOS
 --     └─ update_updated_at_column ................ Atualiza campo updated_at automaticamente
+--
+-- 1.6 VALIDAÇÃO DE FORMULÁRIO COMPLETO
+--     └─ func_check_complete_form ................ Verifica se ficha está completa (baseado em JSON)
+--     └─ func_update_form_counter ................ Atualiza contador de fichas completas
 -- =================================================================================================
 
 
@@ -1010,11 +1014,389 @@ RETURNS TRIGGER AS $$
 BEGIN
     -- Atribui o timestamp atual ao campo updated_at do registro sendo atualizado
     NEW.updated_at = NOW();
-    
+
     -- Retorna o registro modificado para que a operação UPDATE continue
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
 
+
+-- -------------------------------------------------------------------------------------------------
+-- 1.6 VALIDAÇÃO DE FORMULÁRIO COMPLETO
+-- -------------------------------------------------------------------------------------------------
+
+-- ┌─────────────────────────────────────────────────────────────────────────────────────────────┐
+-- │ FUNÇÃO: func_check_complete_form                                                            │
+-- ├─────────────────────────────────────────────────────────────────────────────────────────────┤
+-- │ PROPÓSITO:                                                                                  │
+-- │   Verifica se uma ficha de cliente (3a_customer_root_record) está completa baseado nas      │
+-- │   regras de required_data_form configuradas na inbox.                                       │
+-- │                                                                                             │
+-- │ PARÂMETROS:                                                                                 │
+-- │   p_root_id (BIGINT) - ID do registro em 3a_customer_root_record                            │
+-- │                                                                                             │
+-- │ RETORNO:                                                                                    │
+-- │   BOOLEAN - TRUE se todos os campos required=true estão preenchidos, FALSE caso contrário   │
+-- │                                                                                             │
+-- │ LÓGICA:                                                                                     │
+-- │   1. Busca o required_data_form da inbox associada ao root_id                               │
+-- │   2. Se required_data_form for NULL ou vazio → retorna TRUE (sem regras = completo)         │
+-- │   3. Para cada campo no JSON com "required": true:                                          │
+-- │      - treatment_name, legal_name_complete, whatsapp_owner → verifica tabela 3a             │
+-- │      - gender → verifica tabela 3c                                                          │
+-- │      - birth_date → verifica tabela 3d                                                      │
+-- │      - email → verifica tabela 3e                                                           │
+-- │      - landline_phone → verifica tabela 3f                                                  │
+-- │      - cpf → verifica tabela 3g                                                             │
+-- │      - rg_numero → verifica tabela 3h                                                       │
+-- │      - endereco → verifica tabela 3i (verifica se logradouro + cidade preenchidos)          │
+-- │      - cell_phone → verifica tabela 3b                                                      │
+-- │   4. Se QUALQUER campo required estiver vazio → retorna FALSE                               │
+-- │   5. Se TODOS os campos required estão preenchidos → retorna TRUE                           │
+-- │                                                                                             │
+-- │ EXEMPLO DE required_data_form:                                                              │
+-- │   {                                                                                         │
+-- │     "treatment_name": { "required": true },                                                 │
+-- │     "legal_name_complete": { "required": true },                                            │
+-- │     "birth_date": { "required": false },                                                    │
+-- │     "email": { "required": false },                                                         │
+-- │     "cpf": { "required": true }                                                             │
+-- │   }                                                                                         │
+-- │                                                                                             │
+-- │ TABELAS CONSULTADAS:                                                                        │
+-- │   • 0a_inbox_whatsapp ........... (SELECT) Busca required_data_form                         │
+-- │   • 3a_customer_root_record ..... (SELECT) Verifica campos raiz                             │
+-- │   • 3b até 3i ................... (SELECT) Verifica campos das tabelas filhas               │
+-- │                                                                                             │
+-- │ CARACTERÍSTICAS:                                                                            │
+-- │   ✓ Flexível - Cada inbox define suas próprias regras                                       │
+-- │   ✓ Escalável - Novos campos podem ser adicionados facilmente                               │
+-- │   ✓ Tolerante - Se não houver regras definidas, considera completo                          │
+-- │   ✓ Performático - Usa EXISTS quando possível para evitar leitura desnecessária             │
+-- └─────────────────────────────────────────────────────────────────────────────────────────────┘
+CREATE OR REPLACE FUNCTION func_check_complete_form(p_root_id BIGINT)
+RETURNS BOOLEAN AS $$
+DECLARE
+    v_inbox_id UUID;
+    v_required_config JSONB;
+    v_field_name TEXT;
+    v_is_required BOOLEAN;
+    v_field_value TEXT;
+    v_exists BOOLEAN;
+BEGIN
+    -- 1. Busca inbox_id e required_data_form
+    SELECT
+        r.inbox_id,
+        i.required_data_form
+    INTO
+        v_inbox_id,
+        v_required_config
+    FROM "3a_customer_root_record" r
+    JOIN "0a_inbox_whatsapp" i ON i.inbox_id = r.inbox_id
+    WHERE r.id = p_root_id;
+
+    -- Se não encontrou o registro, retorna FALSE
+    IF v_inbox_id IS NULL THEN
+        RETURN FALSE;
+    END IF;
+
+    -- 2. Se não há configuração de campos obrigatórios, considera completo
+    IF v_required_config IS NULL OR v_required_config = '{}'::jsonb THEN
+        RETURN TRUE;
+    END IF;
+
+    -- 3. Itera sobre cada campo no JSON de configuração
+    FOR v_field_name, v_is_required IN
+        SELECT
+            key,
+            (value->>'required')::boolean
+        FROM jsonb_each(v_required_config)
+    LOOP
+        -- Só valida se o campo é obrigatório
+        IF v_is_required THEN
+            -- 4. Verifica cada campo baseado em sua localização
+            CASE v_field_name
+                -- Campos da tabela raiz 3a
+                WHEN 'treatment_name' THEN
+                    SELECT treatment_name INTO v_field_value
+                    FROM "3a_customer_root_record"
+                    WHERE id = p_root_id;
+
+                    IF v_field_value IS NULL OR v_field_value = '' THEN
+                        RETURN FALSE;
+                    END IF;
+
+                WHEN 'legal_name_complete' THEN
+                    SELECT legal_name_complete INTO v_field_value
+                    FROM "3a_customer_root_record"
+                    WHERE id = p_root_id;
+
+                    IF v_field_value IS NULL OR v_field_value = '' THEN
+                        RETURN FALSE;
+                    END IF;
+
+                WHEN 'whatsapp_owner' THEN
+                    SELECT whatsapp_owner INTO v_field_value
+                    FROM "3a_customer_root_record"
+                    WHERE id = p_root_id;
+
+                    IF v_field_value IS NULL OR v_field_value = '' THEN
+                        RETURN FALSE;
+                    END IF;
+
+                -- Tabela 3b - cell_phone
+                WHEN 'cell_phone' THEN
+                    SELECT EXISTS(
+                        SELECT 1 FROM "3b_cell_phone_linked_service_sheet"
+                        WHERE root_id = p_root_id
+                        AND cell_phone IS NOT NULL
+                        AND cell_phone <> ''
+                    ) INTO v_exists;
+
+                    IF NOT v_exists THEN
+                        RETURN FALSE;
+                    END IF;
+
+                -- Tabela 3c - gender
+                WHEN 'gender' THEN
+                    SELECT EXISTS(
+                        SELECT 1 FROM "3c_gender"
+                        WHERE root_id = p_root_id
+                        AND gender IS NOT NULL
+                    ) INTO v_exists;
+
+                    IF NOT v_exists THEN
+                        RETURN FALSE;
+                    END IF;
+
+                -- Tabela 3d - birth_date
+                WHEN 'birth_date' THEN
+                    SELECT EXISTS(
+                        SELECT 1 FROM "3d_birth_date"
+                        WHERE root_id = p_root_id
+                        AND birth_date IS NOT NULL
+                    ) INTO v_exists;
+
+                    IF NOT v_exists THEN
+                        RETURN FALSE;
+                    END IF;
+
+                -- Tabela 3e - email
+                WHEN 'email' THEN
+                    SELECT EXISTS(
+                        SELECT 1 FROM "3e_email"
+                        WHERE root_id = p_root_id
+                        AND email IS NOT NULL
+                        AND email <> ''
+                    ) INTO v_exists;
+
+                    IF NOT v_exists THEN
+                        RETURN FALSE;
+                    END IF;
+
+                -- Tabela 3f - landline_phone
+                WHEN 'landline_phone' THEN
+                    SELECT EXISTS(
+                        SELECT 1 FROM "3f_landline_phone"
+                        WHERE root_id = p_root_id
+                        AND phone_number IS NOT NULL
+                        AND phone_number <> ''
+                    ) INTO v_exists;
+
+                    IF NOT v_exists THEN
+                        RETURN FALSE;
+                    END IF;
+
+                -- Tabela 3g - cpf
+                WHEN 'cpf' THEN
+                    SELECT EXISTS(
+                        SELECT 1 FROM "3g_cpf"
+                        WHERE root_id = p_root_id
+                        AND cpf IS NOT NULL
+                        AND cpf <> ''
+                    ) INTO v_exists;
+
+                    IF NOT v_exists THEN
+                        RETURN FALSE;
+                    END IF;
+
+                -- Tabela 3h - rg_numero
+                WHEN 'rg_numero' THEN
+                    SELECT EXISTS(
+                        SELECT 1 FROM "3h_rg"
+                        WHERE root_id = p_root_id
+                        AND rg_numero IS NOT NULL
+                        AND rg_numero <> ''
+                    ) INTO v_exists;
+
+                    IF NOT v_exists THEN
+                        RETURN FALSE;
+                    END IF;
+
+                -- Tabela 3i - endereco (verifica logradouro E cidade)
+                WHEN 'endereco' THEN
+                    SELECT EXISTS(
+                        SELECT 1 FROM "3i_endereco_br"
+                        WHERE root_id = p_root_id
+                        AND logradouro IS NOT NULL
+                        AND logradouro <> ''
+                        AND cidade IS NOT NULL
+                        AND cidade <> ''
+                    ) INTO v_exists;
+
+                    IF NOT v_exists THEN
+                        RETURN FALSE;
+                    END IF;
+
+                ELSE
+                    -- Campo não reconhecido, ignora
+                    NULL;
+            END CASE;
+        END IF;
+    END LOOP;
+
+    -- 5. Se passou por todas as validações, o formulário está completo
+    RETURN TRUE;
+
+EXCEPTION
+    WHEN OTHERS THEN
+        -- Em caso de erro, considera incompleto
+        RAISE WARNING 'Erro em func_check_complete_form para root_id %: % - %',
+                      p_root_id, SQLERRM, SQLSTATE;
+        RETURN FALSE;
+END;
+$$ LANGUAGE plpgsql;
+
+
+-- ┌─────────────────────────────────────────────────────────────────────────────────────────────┐
+-- │ FUNÇÃO: func_update_form_counter                                                            │
+-- ├─────────────────────────────────────────────────────────────────────────────────────────────┤
+-- │ PROPÓSITO:                                                                                  │
+-- │   Atualiza automaticamente o contador de fichas completas (form_count) quando uma ficha     │
+-- │   de cliente atinge completude baseado nas regras de required_data_form da inbox.           │
+-- │                                                                                             │
+-- │ TIPO:                                                                                       │
+-- │   TRIGGER FUNCTION - Invocada automaticamente após INSERT/UPDATE nas tabelas do NÍVEL 3     │
+-- │                                                                                             │
+-- │ RETORNO:                                                                                    │
+-- │   TRIGGER - Retorna NEW para permitir continuação da operação                               │
+-- │                                                                                             │
+-- │ LÓGICA:                                                                                     │
+-- │   1. Identifica o root_id da ficha afetada (varia por tabela)                               │
+-- │   2. Chama func_check_complete_form(root_id) para verificar completude                      │
+-- │   3. Compara resultado com o estado atual (is_form_complete):                               │
+-- │                                                                                             │
+-- │      CASO A: Formulário COMPLETO E estava marcado como INCOMPLETO                           │
+-- │      → Marca is_form_complete = TRUE na tabela 3a                                           │
+-- │      → Incrementa form_count em 0b_inbox_counters                                           │
+-- │                                                                                             │
+-- │      CASO B: Formulário INCOMPLETO E estava marcado como COMPLETO                           │
+-- │      → Marca is_form_complete = FALSE na tabela 3a                                          │
+-- │      → Decrementa form_count em 0b_inbox_counters                                           │
+-- │                                                                                             │
+-- │      CASO C: Estado não mudou (completo→completo ou incompleto→incompleto)                  │
+-- │      → Não faz nada (performance otimizada)                                                 │
+-- │                                                                                             │
+-- │ TABELAS AFETADAS:                                                                           │
+-- │   • 3a_customer_root_record ..... (UPDATE) Atualiza is_form_complete                        │
+-- │   • 0b_inbox_counters ........... (UPDATE) Incrementa/decrementa form_count                 │
+-- │                                                                                             │
+-- │ COMPATIBILIDADE:                                                                            │
+-- │   Esta função funciona com triggers de diferentes tabelas do NÍVEL 3:                       │
+-- │   • 3a_customer_root_record ... NEW.id é o root_id                                          │
+-- │   • 3b até 3i ................. NEW.root_id é a referência                                  │
+-- │                                                                                             │
+-- │ CARACTERÍSTICAS:                                                                            │
+-- │   ✓ Atômico - Incremento/decremento é thread-safe                                           │
+-- │   ✓ Inteligente - Só atualiza quando há mudança de estado                                   │
+-- │   ✓ Bidirecional - Detecta tanto completude quanto incompletude                             │
+-- │   ✓ Resiliente - Não falha se contador não existir (cria automaticamente)                   │
+-- │                                                                                             │
+-- │ OBSERVAÇÕES:                                                                                │
+-- │   • Esta função deve ser aplicada via trigger AFTER INSERT OR UPDATE                        │
+-- │   • É executada APÓS a inserção/atualização para garantir dados consistentes                │
+-- │   • Triggers devem ser criados em TODAS as tabelas do NÍVEL 3 (3a até 3i)                   │
+-- └─────────────────────────────────────────────────────────────────────────────────────────────┘
+CREATE OR REPLACE FUNCTION func_update_form_counter()
+RETURNS TRIGGER AS $$
+DECLARE
+    v_root_id BIGINT;
+    v_inbox_id UUID;
+    v_is_complete_now BOOLEAN;
+    v_was_complete_before BOOLEAN;
+BEGIN
+    -- 1. Identifica o root_id baseado na tabela que disparou o trigger
+    IF TG_TABLE_NAME = '3a_customer_root_record' THEN
+        v_root_id := NEW.id;
+    ELSE
+        v_root_id := NEW.root_id;
+    END IF;
+
+    -- Se não conseguiu identificar root_id, retorna sem fazer nada
+    IF v_root_id IS NULL THEN
+        RETURN NEW;
+    END IF;
+
+    -- 2. Busca inbox_id e estado atual de completude
+    SELECT inbox_id, is_form_complete
+    INTO v_inbox_id, v_was_complete_before
+    FROM "3a_customer_root_record"
+    WHERE id = v_root_id;
+
+    -- Se não encontrou o registro raiz, retorna
+    IF v_inbox_id IS NULL THEN
+        RETURN NEW;
+    END IF;
+
+    -- 3. Verifica se o formulário está completo agora
+    v_is_complete_now := func_check_complete_form(v_root_id);
+
+    -- 4. Compara estado anterior com estado atual e age conforme necessário
+    IF v_is_complete_now AND NOT v_was_complete_before THEN
+        -- CASO A: Ficou completo agora! 🎉
+
+        -- Marca como completo na tabela raiz
+        UPDATE "3a_customer_root_record"
+        SET is_form_complete = TRUE
+        WHERE id = v_root_id;
+
+        -- Incrementa o contador de fichas completas
+        UPDATE "0b_inbox_counters"
+        SET form_count = form_count + 1
+        WHERE inbox_id = v_inbox_id;
+
+        -- Se o contador não existe, cria
+        IF NOT FOUND THEN
+            INSERT INTO "0b_inbox_counters" (inbox_id, contact_count, form_count, scheduling_count)
+            VALUES (v_inbox_id, 0, 1, 0)
+            ON CONFLICT (inbox_id) DO UPDATE
+            SET form_count = "0b_inbox_counters".form_count + 1;
+        END IF;
+
+    ELSIF NOT v_is_complete_now AND v_was_complete_before THEN
+        -- CASO B: Ficou incompleto (dados foram removidos)
+
+        -- Marca como incompleto na tabela raiz
+        UPDATE "3a_customer_root_record"
+        SET is_form_complete = FALSE
+        WHERE id = v_root_id;
+
+        -- Decrementa o contador (com proteção contra negativo)
+        UPDATE "0b_inbox_counters"
+        SET form_count = GREATEST(form_count - 1, 0)
+        WHERE inbox_id = v_inbox_id;
+
+    -- ELSE: Estado não mudou, não faz nada (otimização de performance)
+    END IF;
+
+    RETURN NEW;
+
+EXCEPTION
+    WHEN OTHERS THEN
+        RAISE WARNING 'Erro em func_update_form_counter para root_id %: % - %',
+                      v_root_id, SQLERRM, SQLSTATE;
+        RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
 
 
