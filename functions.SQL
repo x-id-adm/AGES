@@ -39,6 +39,9 @@
 -- 1.6 VALIDAÇÃO DE FORMULÁRIO COMPLETO
 --     └─ func_check_complete_form ................ Verifica se ficha está completa (baseado em JSON)
 --     └─ func_update_form_counter ................ Atualiza contador de fichas completas
+--
+-- 1.7 CONTADORES DE STATUS DE ATENDIMENTOS
+--     └─ func_update_appointment_status_counter .. Atualiza contadores de status automaticamente
 -- =================================================================================================
 
 

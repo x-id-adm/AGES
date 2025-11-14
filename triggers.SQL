@@ -32,6 +32,9 @@
 --     └─ trg_check_form_complete_3g .......... [3g_cpf] → Valida completude
 --     └─ trg_check_form_complete_3h .......... [3h_rg] → Valida completude
 --     └─ trg_check_form_complete_3i .......... [3i_endereco_br] → Valida completude
+--
+-- 2.7 TRIGGERS DE CONTADORES DE STATUS DE ATENDIMENTOS
+--     └─ trg_update_appointment_status_counter [4a_customer_service_history] → Atualiza contadores de status
 -- =================================================================================================
 
 
