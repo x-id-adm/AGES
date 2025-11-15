@@ -340,6 +340,60 @@ CREATE TABLE IF NOT EXISTS "3i_endereco_br" (
 CREATE INDEX IF NOT EXISTS idx_endereco_root ON "3i_endereco_br"(root_id);
 CREATE INDEX IF NOT EXISTS idx_endereco_cep  ON "3i_endereco_br"(cep) WHERE cep IS NOT NULL;
 
+-- 3j. Veículos do cliente (1-para-N)
+CREATE TABLE IF NOT EXISTS "3j_veiculos_br" (
+    id                  BIGSERIAL PRIMARY KEY,
+    root_id             BIGINT NOT NULL REFERENCES "3a_customer_root_record"(id) ON DELETE CASCADE,
+
+    -- Identificação Principal
+    placa               TEXT NOT NULL,              -- Ex: "ABC1D23" (Mercosul) ou "ABC-1234" (antiga)
+    renavam             TEXT,                       -- Código RENAVAM (11 dígitos)
+    chassi              TEXT,                       -- Número do chassi/VIN
+
+    -- Classificação do Veículo
+    tipo_veiculo        TEXT NOT NULL DEFAULT 'carro' CHECK (tipo_veiculo IN (
+                            'moto', 'carro', 'camionete', 'suv', 'van',
+                            'caminhao', 'onibus', 'triciclo', 'quadriciclo', 'outro'
+                        )),
+
+    -- Dados do Veículo
+    marca               TEXT,                       -- Ex: "Volkswagen", "Honda"
+    modelo              TEXT NOT NULL,              -- Ex: "Gol", "Civic", "CG 160"
+    versao              TEXT,                       -- Ex: "1.0 Turbo TSI", "EX-L"
+    ano_fabricacao      INTEGER CHECK (ano_fabricacao >= 1900 AND ano_fabricacao <= 2100),
+    ano_modelo          INTEGER CHECK (ano_modelo >= 1900 AND ano_modelo <= 2100),
+    cor                 TEXT,                       -- Ex: "Prata", "Preto", "Branco"
+    combustivel         TEXT CHECK (combustivel IN (
+                            'gasolina', 'etanol', 'flex', 'diesel', 'gnv', 'eletrico', 'hibrido'
+                        )),
+
+    -- Informações Adicionais
+    quilometragem       INTEGER CHECK (quilometragem >= 0),  -- KM atual (útil para oficinas)
+    apelido             TEXT,                       -- Nome carinhoso: "Carro da esposa", "Moto do trabalho"
+    observacoes         TEXT,                       -- Notas livres
+
+    -- Sistema de Segurança (URLs de fotos)
+    url_foto_entrada    TEXT,                       -- Link para foto de entrada
+    urls_adicionais     JSONB DEFAULT '[]'::jsonb,  -- Array de URLs extras [{"url": "...", "descricao": "..."}]
+
+    -- Status e Controle
+    is_principal        BOOLEAN NOT NULL DEFAULT FALSE,  -- Veículo principal do cliente
+    is_ativo            BOOLEAN NOT NULL DEFAULT TRUE,   -- Se ainda é do cliente
+
+    -- Auditoria
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    -- Constraints
+    UNIQUE(root_id, placa)  -- Um cliente não pode ter a mesma placa duas vezes
+);
+
+-- Índices para performance
+CREATE INDEX IF NOT EXISTS idx_veiculos_root_id ON "3j_veiculos_br"(root_id);
+CREATE INDEX IF NOT EXISTS idx_veiculos_placa   ON "3j_veiculos_br"(placa);
+CREATE INDEX IF NOT EXISTS idx_veiculos_tipo    ON "3j_veiculos_br"(tipo_veiculo);
+CREATE INDEX IF NOT EXISTS idx_veiculos_modelo  ON "3j_veiculos_br"(modelo);
+
 -- ================================================================
 -- NÍVEL 4 - Histórico de Agendamentos
 -- ================================================================
