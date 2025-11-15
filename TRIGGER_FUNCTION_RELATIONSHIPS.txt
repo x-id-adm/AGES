@@ -1,0 +1,386 @@
+================================================================================
+AGES PROJECT - TRIGGER TO FUNCTION MAPPING DIAGRAM
+================================================================================
+
+This document shows the relationships between triggers and the functions they call.
+
+================================================================================
+SYNCHRONIZATION LAYER
+================================================================================
+
+TABLE: 3a_customer_root_record
+  EVENT: AFTER INSERT OR UPDATE
+  TRIGGER: trig_sync_owner_to_cell
+    └─> FUNCTION: func_sync_owner_to_cell_sheet()
+        PURPOSE: Syncs WhatsApp owner to cell phone sheet
+        TABLES MODIFIED: 3b_cell_phone_linked_service_sheet (INSERT/UPDATE)
+
+================================================================================
+ID GENERATION LAYER
+================================================================================
+
+TABLE: 3a_customer_root_record
+  EVENT: BEFORE INSERT
+  TRIGGER: trg_generate_client_id
+    └─> FUNCTION: func_generate_friendly_client_id()
+        PURPOSE: Generates CT{N} IDs (CT1, CT2, CT3...)
+        TABLES MODIFIED: 0b_inbox_counters (client_count increment)
+        RETURNS: Generated client_id value for NEW record
+
+TABLE: 4a_customer_service_history
+  EVENT: BEFORE INSERT
+  TRIGGER: trg_generate_service_id
+    └─> FUNCTION: func_generate_friendly_service_id()
+        PURPOSE: Generates AT{N} IDs (AT1, AT2, AT3...)
+        TABLES MODIFIED: 0b_inbox_counters (atendimento_count increment)
+        RETURNS: Generated service_id value for NEW record
+
+================================================================================
+TIMESTAMP MANAGEMENT LAYER (DYNAMIC)
+================================================================================
+
+DYNAMIC APPLICATION (created for ALL tables with 'updated_at' column):
+  TABLE: (dynamically applied to 10+ tables)
+    - 0a_inbox_whatsapp
+    - 1a_whatsapp_user_contact
+    - 2b_conversation_messages
+    - 3a_customer_root_record
+    - 3b_cell_phone_linked_service_sheet
+    - 3c_gender
+    - 3d_birth_date
+    - 3e_email
+    - 3f_landline_phone
+    - 3g_cpf
+    - 3h_rg
+    - 3i_endereco_br
+    - 4a_customer_service_history
+    - (and any others added in future)
+
+  EVENT: BEFORE UPDATE
+  TRIGGER: trigger_update_timestamp (created for each table individually)
+    └─> FUNCTION: update_updated_at_column()
+        PURPOSE: Automatically sets updated_at = NOW()
+        EFFECT: All modifications timestamp any table automatically
+        NOTE: This trigger is created dynamically via DO block
+
+================================================================================
+PRIMARY RECORD MARKING LAYER (Reusable function)
+================================================================================
+
+TABLE: 3b_cell_phone_linked_service_sheet
+  EVENT: BEFORE INSERT
+  TRIGGER: trg_first_cell_phone_is_primary
+    └─> FUNCTION: func_ensure_first_is_primary()
+        PURPOSE: Marks first phone as primary (is_primary = TRUE)
+        LOGIC: If no other records exist, NEW.is_primary = TRUE
+
+TABLE: 3e_email
+  EVENT: BEFORE INSERT
+  TRIGGER: trg_first_email_is_primary
+    └─> FUNCTION: func_ensure_first_is_primary() [SAME FUNCTION]
+        PURPOSE: Marks first email as primary (is_primary = TRUE)
+
+TABLE: 3f_landline_phone
+  EVENT: BEFORE INSERT
+  TRIGGER: trg_first_landline_is_primary
+    └─> FUNCTION: func_ensure_first_is_primary() [SAME FUNCTION]
+        PURPOSE: Marks first landline as primary (is_primary = TRUE)
+
+NOTE: Same function used across 3 different tables with different contexts!
+
+================================================================================
+MESSAGE AUTOMATION LAYER
+================================================================================
+
+TABLE: 2b_conversation_messages
+  EVENT: BEFORE INSERT OR UPDATE
+  TRIGGER: trg_auto_populate_message
+    └─> FUNCTION: func_auto_populate_message_fields()
+        PURPOSE: Auto-populates message fields and creates tsvector
+        LOGIC:
+          1. If sender_type is internal (ai_agent, human_agent, system)
+             AND source_message_id is NULL:
+               └─> CALL: func_generate_ulid()  [nested function]
+                   └─> Sets source_message_id = NEW ULID
+          
+          2. If message_content is not empty:
+             └─> Generate tsvector for full-text search (Portuguese)
+        
+        TABLES MODIFIED: None (only modifies NEW record fields)
+
+================================================================================
+FORM COMPLETION VALIDATION LAYER (Reusable function)
+================================================================================
+
+STRUCTURE:
+  - Single function: func_update_form_counter()
+  - Called by 9 different triggers (one for each form-related table)
+  - Each trigger fires AFTER INSERT OR UPDATE on its respective table
+
+TRIGGER CHAIN:
+  TABLE: 3a_customer_root_record
+    TRIGGER: trg_check_form_complete_3a [Line 299]
+      └─> FUNCTION: func_update_form_counter()
+
+  TABLE: 3b_cell_phone_linked_service_sheet
+    TRIGGER: trg_check_form_complete_3b [Line 308]
+      └─> FUNCTION: func_update_form_counter() [SAME]
+
+  TABLE: 3c_gender
+    TRIGGER: trg_check_form_complete_3c [Line 317]
+      └─> FUNCTION: func_update_form_counter() [SAME]
+
+  TABLE: 3d_birth_date
+    TRIGGER: trg_check_form_complete_3d [Line 326]
+      └─> FUNCTION: func_update_form_counter() [SAME]
+
+  TABLE: 3e_email
+    TRIGGER: trg_check_form_complete_3e [Line 335]
+      └─> FUNCTION: func_update_form_counter() [SAME]
+
+  TABLE: 3f_landline_phone
+    TRIGGER: trg_check_form_complete_3f [Line 344]
+      └─> FUNCTION: func_update_form_counter() [SAME]
+
+  TABLE: 3g_cpf
+    TRIGGER: trg_check_form_complete_3g [Line 353]
+      └─> FUNCTION: func_update_form_counter() [SAME]
+
+  TABLE: 3h_rg
+    TRIGGER: trg_check_form_complete_3h [Line 362]
+      └─> FUNCTION: func_update_form_counter() [SAME]
+
+  TABLE: 3i_endereco_br
+    TRIGGER: trg_check_form_complete_3i [Line 371]
+      └─> FUNCTION: func_update_form_counter() [SAME]
+
+FUNCTION BEHAVIOR:
+  INPUT: TG_TABLE_NAME, NEW record, OLD record (if UPDATE)
+  PROCESSING:
+    1. Detects which table triggered it (3a, 3b, 3c, etc.)
+    2. Queries parent customer record (root_id)
+    3. Validates form completeness based on:
+       - required_data_form JSON from inbox configuration
+       - Current state of all form tables
+    4. Checks if form state changed (incomplete→complete or vice-versa)
+  OUTPUT:
+    - Updates is_form_complete in 3a_customer_root_record
+    - Updates form_count in 0b_inbox_counters
+    - Logs changes
+
+================================================================================
+APPOINTMENT STATUS MANAGEMENT LAYER
+================================================================================
+
+TABLE: 4a_customer_service_history
+  EVENT: BEFORE INSERT OR UPDATE
+  TRIGGER: trg_set_status_timestamp [Line 402]
+    └─> FUNCTION: func_set_status_timestamp()
+        PURPOSE: Sets status-specific timestamps
+        LOGIC:
+          - When status changes to 'Scheduled': sets scheduled_at = NOW()
+          - When status changes to 'Confirmed': sets confirmed_at = NOW()
+          - When status changes to 'Completed': sets completed_at = NOW()
+          - When status changes to 'Cancelled': sets cancelled_at = NOW()
+          - And others...
+        
+        EFFECT: Preserves timestamp of when each status was first set
+        EXECUTES: BEFORE other triggers (BEFORE INSERT/UPDATE)
+
+TABLE: 4a_customer_service_history
+  EVENT: AFTER INSERT OR UPDATE
+  TRIGGER: trg_update_appointment_status_counter [Line 451]
+    └─> FUNCTION: func_update_appointment_status_counter()
+        PURPOSE: Maintains status counters
+        LOGIC:
+          1. On INSERT: Increment counter for new status
+          2. On UPDATE (if status changed):
+             - Decrement counter for OLD status
+             - Increment counter for NEW status
+        
+        TABLES MODIFIED: 0b_inbox_counters
+          Fields updated:
+            - scheduled_count
+            - confirmed_count
+            - completed_count
+            - cancelled_count
+            - rescheduled_count
+            - no_show_count
+        
+        NOTE: This trigger fires AFTER so timestamps are already set
+
+EXECUTION ORDER ON STATUS UPDATE:
+  1. [BEFORE] trg_set_status_timestamp → func_set_status_timestamp()
+  2. [AFTER]  trg_update_appointment_status_counter → func_update_appointment_status_counter()
+  3. [BEFORE] trigger_update_timestamp → update_updated_at_column()
+
+================================================================================
+LIFETIME VALUE (LTV) CALCULATION LAYER
+================================================================================
+
+TABLE: 4a_customer_service_history
+  EVENT: AFTER INSERT OR UPDATE OF service_status
+  TRIGGER: trigger_update_customer_ltv [Line 140 in trigger_update_customer_ltv.sql]
+    └─> FUNCTION: update_customer_ltv()
+        PURPOSE: Automatically updates customer LTV when appointment completes
+        
+        TRIGGER CONDITION: service_status changes to 'Completed'
+        
+        LOGIC:
+          1. Check if this is a NEW completion (not already completed)
+          2. Validate value_cents is > 0
+          3. If valid, UPDATE 3a_customer_root_record:
+             - Increment total_spent_cents by value_cents
+             - Increment total_completed_appointments
+             - Set last_purchase_at = NEW.completed_at
+             - Set first_purchase_at = NEW.completed_at (only if NULL)
+          
+        TABLES MODIFIED: 3a_customer_root_record
+        
+        SIDE EFFECT: Also updates 3a_customer_root_record.updated_at
+
+MANUAL LTV FUNCTIONS (NOT triggered, called from application):
+  
+  FUNCTION: recalculate_customer_ltv(p_root_id)
+    PURPOSE: Manually recalculate a single customer's LTV
+    USAGE: SELECT recalculate_customer_ltv(123);
+    PROCESS:
+      - Sums all completed appointments for customer
+      - Recalculates total_spent_cents, total_completed_appointments
+      - Sets first_purchase_at and last_purchase_at correctly
+      - Overwrites any incorrect values
+    
+    RETURNS: JSONB with results:
+      {
+        "root_id": 123,
+        "total_spent_cents": 50000,
+        "total_spent_currency": 500.00,
+        "total_completed_appointments": 5,
+        "first_purchase_at": "2025-01-15T10:30:00Z",
+        "last_purchase_at": "2025-11-10T14:45:00Z"
+      }
+
+  FUNCTION: recalculate_all_ltv_for_inbox(p_inbox_id)
+    PURPOSE: Batch recalculate all customers' LTV in an inbox
+    USAGE: SELECT recalculate_all_ltv_for_inbox('uuid-inbox');
+    PROCESS:
+      - Loops through all customers in inbox
+      - Calls recalculate_customer_ltv() for each
+      - Aggregates statistics
+    
+    RETURNS: JSONB with statistics:
+      {
+        "inbox_id": "uuid-inbox",
+        "customers_processed": 150,
+        "total_billing_cents": 2500000,
+        "total_billing_currency": 25000.00,
+        "recalculated_at": "2025-11-15T23:16:00Z"
+      }
+
+================================================================================
+REPORTING & ANALYTICS LAYER (NOT TRIGGERED)
+================================================================================
+
+BILLING FUNCTIONS - Called from application code:
+
+  get_billing_by_period(inbox_id, start_date, end_date)
+    └─> Queries: 4a_customer_service_history
+        Filter: service_status = 'Completed' AND completed_at BETWEEN dates
+        Returns: Total, count, average ticket, period info
+
+  get_billing_today(inbox_id)
+    └─> Calls get_billing_by_period() with TODAY() range
+
+  get_billing_last_n_days(inbox_id, days)
+    └─> Calls get_billing_by_period() with last N days
+
+  get_billing_specific_month(inbox_id, year, month)
+    └─> Calls get_billing_by_period() with month range
+
+  get_customer_ltv(root_id)
+    └─> Queries: 3a_customer_root_record
+        Returns: LTV fields for single customer
+
+  get_top_customers_by_ltv(inbox_id, limit)
+    └─> Queries: 3a_customer_root_record
+        Order by: total_spent_cents DESC
+        Returns: Top N customers with LTV info
+
+COUNTER FUNCTIONS - Called from application code:
+
+  func_get_appointment_counters_by_period(inbox_id, start_date, end_date)
+    └─> Queries: 4a_customer_service_history
+        Groups by: service_status
+        Filters by: completed_at range
+        Returns: Count by status (Scheduled, Confirmed, Completed, etc.)
+
+  func_get_counters_last_n_days(inbox_id, days)
+    └─> Calls: func_get_appointment_counters_by_period() with last N days
+
+  func_get_counters_specific_month(inbox_id, year, month)
+    └─> Calls: func_get_appointment_counters_by_period() with month range
+
+  func_count_status_changes(inbox_id, start_date, end_date)
+    └─> Counts: How many times each status was applied in period
+        Different from counters - tracks state changes, not current counts
+
+================================================================================
+WEBHOOK INTEGRATION LAYER (NOT TRIGGERED)
+================================================================================
+
+FUNCTION: func_upsert_contact_from_webhook()
+  PURPOSE: Synchronizes data from external webhook (PING service)
+  CALLED BY: Application code (on webhook receipt)
+  
+  BEHAVIOR: ATOMIC OPERATION
+    1. UPSERT 0a_inbox_whatsapp (insert or update inbox)
+    2. UPSERT 1a_whatsapp_user_contact (insert or update contact)
+  
+  TABLES MODIFIED:
+    - 0a_inbox_whatsapp (INSERT/UPDATE)
+    - 1a_whatsapp_user_contact (INSERT/UPDATE)
+  
+  AFTER THIS FUNCTION:
+    └─> Triggers automatically fire on any INSERT/UPDATE:
+        [trigger_update_timestamp] → update_updated_at_column()
+
+  NOTE: This is the entry point for all external data!
+
+================================================================================
+FUNCTION CALL DEPENDENCY TREE
+================================================================================
+
+APPLICATION CODE (entry points)
+├─ func_upsert_contact_from_webhook()
+│  └─ [Triggers fire on result]
+│     ├─ trigger_update_timestamp → update_updated_at_column()
+│     └─ Other table-specific triggers
+│
+├─ INSERT 3a_customer_root_record
+│  └─ [Triggers fire]
+│     ├─ trg_generate_client_id → func_generate_friendly_client_id()
+│     ├─ trigger_update_timestamp → update_updated_at_column()
+│     └─ trg_check_form_complete_3a → func_update_form_counter()
+│
+├─ INSERT 4a_customer_service_history
+│  └─ [Triggers fire in order]
+│     ├─ trg_generate_service_id → func_generate_friendly_service_id()
+│     ├─ trg_set_status_timestamp → func_set_status_timestamp()
+│     ├─ trg_update_appointment_status_counter → func_update_appointment_status_counter()
+│     ├─ trigger_update_timestamp → update_updated_at_column()
+│     └─ [If status='Completed']
+│        └─ trigger_update_customer_ltv → update_customer_ltv()
+│
+├─ INSERT 2b_conversation_messages
+│  └─ [Triggers fire]
+│     ├─ trg_auto_populate_message → func_auto_populate_message_fields()
+│     │  └─ [If internal sender] → func_generate_ulid()
+│     └─ trigger_update_timestamp → update_updated_at_column()
+│
+├─ get_billing_by_period() → [Reporting]
+├─ get_customer_ltv() → [Reporting]
+├─ func_get_appointment_counters_by_period() → [Reporting]
+├─ recalculate_customer_ltv() → [Manual]
+└─ recalculate_all_ltv_for_inbox() → [Batch]
+
+================================================================================

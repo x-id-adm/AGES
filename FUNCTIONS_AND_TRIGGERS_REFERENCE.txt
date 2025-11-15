@@ -1,0 +1,268 @@
+================================================================================
+AGES PROJECT - POSTGRESQL FUNCTIONS & TRIGGERS - QUICK REFERENCE
+================================================================================
+
+LOCATION: /home/user/AGES/
+
+================================================================================
+CORE STATISTICS
+================================================================================
+
+Total Functions:      25
+Total Triggers:       20 (19 named + 1 dynamic)
+Total SQL Files:      11
+Total SQL Lines:      5,610
+Total Project Size:   362 KB
+
+================================================================================
+FUNCTION QUICK LOOKUP (by filename)
+================================================================================
+
+functions.SQL (112 KB)
+---
+1. func_upsert_contact_from_webhook()        [Line 69]    - Webhook sync
+2. func_sync_owner_to_cell_sheet()           [Line 219]   - Owner sync
+3. func_generate_friendly_client_id()        [Line 288]   - Generate CT{N} IDs
+4. func_generate_friendly_service_id()       [Line 328]   - Generate AT{N} IDs
+5. func_ensure_first_is_primary()            [Line 384]   - Mark first as primary
+6. func_generate_ulid()                      [Line 432]   - Generate ULIDs
+7. func_auto_populate_message_fields()       [Line 495]   - Message automation
+8. update_updated_at_column()                [Line 520]   - Timestamp updates
+9. func_check_complete_form()                [Line 1126]  - Form validation
+10. func_update_form_counter()               [Line 1369]  - Counter updates
+11. func_set_status_timestamp()              [Line 1507]  - Status timestamps
+12. func_update_appointment_status_counter() [Line 1609]  - Counter updates
+
+functions_billing_metrics.sql (30 KB)
+---
+13. get_billing_by_period()                  [Line 69]    - Period billing
+14. get_billing_today()                      [Line 132]   - Today's billing
+15. get_billing_last_n_days()                [Line 164]   - Last N days
+16. get_billing_specific_month()             [Line 197]   - Monthly billing
+17. get_customer_ltv()                       [Line 259]   - Customer LTV
+18. get_top_customers_by_ltv()               [Line 327]   - Top customers
+
+functions_time_based_counters.sql (23 KB)
+---
+19. func_get_appointment_counters_by_period()[Line 65]    - Period counters
+20. func_get_counters_last_n_days()          [Line 114]   - Last N days
+21. func_get_counters_specific_month()       [Line 147]   - Monthly counters
+22. func_count_status_changes()              [Line 209]   - Status changes
+
+trigger_update_customer_ltv.sql (17 KB)
+---
+23. update_customer_ltv()                    [Line 55]    - Trigger function
+24. recalculate_customer_ltv()               [Line 173]   - Manual recalc
+25. recalculate_all_ltv_for_inbox()          [Line 246]   - Batch recalc
+
+================================================================================
+TRIGGER QUICK LOOKUP (by type)
+================================================================================
+
+SYNCHRONIZATION (1)
+- trig_sync_owner_to_cell              [triggers.SQL:60]
+
+ID GENERATION (2)
+- trg_generate_client_id               [triggers.SQL:84]
+- trg_generate_service_id              [triggers.SQL:104]
+
+TIMESTAMP MANAGEMENT (1 - dynamic)
+- trigger_update_timestamp             [triggers.SQL:148]  (applies to 10+ tables)
+
+PRIMARY MARKING (3)
+- trg_first_cell_phone_is_primary      [triggers.SQL:174]
+- trg_first_email_is_primary           [triggers.SQL:193]
+- trg_first_landline_is_primary        [triggers.SQL:212]
+
+MESSAGE AUTOMATION (1)
+- trg_auto_populate_message            [triggers.SQL:248]
+
+FORM VALIDATION (9)
+- trg_check_form_complete_3a           [triggers.SQL:299]   (customer root)
+- trg_check_form_complete_3b           [triggers.SQL:308]   (cell phone)
+- trg_check_form_complete_3c           [triggers.SQL:317]   (gender)
+- trg_check_form_complete_3d           [triggers.SQL:326]   (birth date)
+- trg_check_form_complete_3e           [triggers.SQL:335]   (email)
+- trg_check_form_complete_3f           [triggers.SQL:344]   (landline)
+- trg_check_form_complete_3g           [triggers.SQL:353]   (cpf)
+- trg_check_form_complete_3h           [triggers.SQL:362]   (rg)
+- trg_check_form_complete_3i           [triggers.SQL:371]   (address)
+
+STATUS MANAGEMENT (2)
+- trg_set_status_timestamp             [triggers.SQL:402]
+- trg_update_appointment_status_counter[triggers.SQL:451]
+
+LTV UPDATES (1)
+- trigger_update_customer_ltv          [trigger_update_customer_ltv.sql:140]
+
+================================================================================
+MOST USED FUNCTIONS (called by triggers)
+================================================================================
+
+func_update_form_counter()              - Used by 9 triggers
+func_ensure_first_is_primary()          - Used by 3 triggers
+update_updated_at_column()              - Used by 1 dynamic trigger (10+ tables)
+All others                              - Used by 1 trigger each
+
+================================================================================
+KEY TABLE TRIGGERS SUMMARY
+================================================================================
+
+3a_customer_root_record
+  - trig_sync_owner_to_cell
+  - trg_generate_client_id
+  - trg_check_form_complete_3a
+  - trigger_update_timestamp (dynamic)
+
+4a_customer_service_history
+  - trg_generate_service_id
+  - trg_set_status_timestamp
+  - trg_update_appointment_status_counter
+  - trigger_update_customer_ltv
+  - trigger_update_timestamp (dynamic)
+
+2b_conversation_messages
+  - trg_auto_populate_message
+  - trigger_update_timestamp (dynamic)
+
+Level-3 Detail Tables (3b-3i)
+  - trg_first_*_is_primary (phones/email)
+  - trg_check_form_complete_3* (all 9 tables)
+  - trigger_update_timestamp (dynamic)
+
+================================================================================
+EXECUTION WORKFLOWS
+================================================================================
+
+1. CUSTOMER REGISTRATION
+   INSERT 3a_customer_root_record
+   → [trg_generate_client_id] → func_generate_friendly_client_id()
+   → [trigger_update_timestamp] → update_updated_at_column()
+
+2. APPOINTMENT CREATION & UPDATE
+   INSERT 4a_customer_service_history
+   → [trg_generate_service_id] → func_generate_friendly_service_id()
+   → [trg_set_status_timestamp] → func_set_status_timestamp()
+   → [trg_update_appointment_status_counter] → func_update_appointment_status_counter()
+   → [trigger_update_timestamp] → update_updated_at_column()
+   
+   When service_status = 'Completed':
+   → [trigger_update_customer_ltv] → update_customer_ltv()
+   → Updates LTV fields in 3a_customer_root_record
+
+3. FORM COMPLETION TRACKING
+   INSERT/UPDATE any Level-3 table (3a-3i)
+   → [trg_check_form_complete_*] → func_update_form_counter()
+   → Validates form based on inbox JSON config
+   → Updates form_count in 0b_inbox_counters
+   → Updates is_form_complete in 3a_customer_root_record
+
+4. MESSAGE CREATION
+   INSERT 2b_conversation_messages
+   → [trg_auto_populate_message] → func_auto_populate_message_fields()
+   → If internal message: calls func_generate_ulid()
+   → Generates tsvector for full-text search
+   → [trigger_update_timestamp] → update_updated_at_column()
+
+================================================================================
+FREQUENTLY CALLED REPORTING FUNCTIONS
+================================================================================
+
+BILLING REPORTS
+- get_billing_by_period(inbox_id, start_date, end_date)
+- get_billing_today(inbox_id)
+- get_billing_last_n_days(inbox_id, days)
+- get_billing_specific_month(inbox_id, year, month)
+
+CUSTOMER ANALYSIS
+- get_customer_ltv(root_id)
+- get_top_customers_by_ltv(inbox_id, limit)
+
+APPOINTMENT ANALYTICS
+- func_get_appointment_counters_by_period(inbox_id, start_date, end_date)
+- func_get_counters_last_n_days(inbox_id, days)
+- func_get_counters_specific_month(inbox_id, year, month)
+- func_count_status_changes(inbox_id, start_date, end_date)
+
+LTV MANAGEMENT
+- recalculate_customer_ltv(root_id)              - Manual single customer
+- recalculate_all_ltv_for_inbox(inbox_id)       - Batch operation
+
+================================================================================
+FUNCTIONS NOT CALLED BY TRIGGERS (Called from application code)
+================================================================================
+
+WEBHOOK INTEGRATION
+- func_upsert_contact_from_webhook()
+
+FORM VALIDATION
+- func_check_complete_form()
+
+BILLING & REPORTING
+- All get_billing_* functions
+- All get_customer_ltv functions
+- All func_get_*_counters functions
+- All func_count_* functions
+
+ADMIN/MAINTENANCE
+- recalculate_customer_ltv()
+- recalculate_all_ltv_for_inbox()
+
+================================================================================
+FILE ORGANIZATION
+================================================================================
+
+FUNCTION DEFINITION FILES:
+- /home/user/AGES/functions.SQL                (112 KB) - Core system
+- /home/user/AGES/functions_billing_metrics.sql(30 KB)  - Revenue analytics
+- /home/user/AGES/functions_time_based_counters.sql (23 KB) - Time analytics
+
+TRIGGER DEFINITION FILES:
+- /home/user/AGES/triggers.SQL                 (37 KB)  - Main triggers
+- /home/user/AGES/trigger_update_customer_ltv.sql (17 KB) - LTV triggers
+
+SCHEMA & TESTS:
+- /home/user/AGES/schema.sql                   (26 KB)  - Table definitions
+- /home/user/AGES/test_*.sql                   (79 KB)  - Unit tests (5 files)
+
+================================================================================
+KEY DESIGN PATTERNS
+================================================================================
+
+1. TRIGGER + FUNCTION SEPARATION
+   Each trigger calls a dedicated function for clean logic separation
+
+2. AUTOMATIC TIMESTAMP MANAGEMENT
+   Dynamic trigger creation for all tables with updated_at column
+
+3. DENORMALIZED COUNTERS
+   Tables maintain counters (form_count, status_counts) for performance
+
+4. JSONB CONFIGURATION
+   Inbox configuration stored as JSON (required_data_form)
+
+5. DYNAMIC SQL
+   Uses information_schema to discover tables and apply triggers dynamically
+
+================================================================================
+IMPORTANT NOTES
+================================================================================
+
+1. The trigger_update_timestamp is created DYNAMICALLY for every table
+   with an updated_at column - it's not one static trigger!
+
+2. Multiple triggers can fire on the same table in sequence
+   (e.g., 4a_customer_service_history has 5 potential triggers)
+
+3. BEFORE triggers execute before INSERT/UPDATE, AFTER triggers execute after
+
+4. The form validation system (9 triggers) all call the SAME function
+   (func_update_form_counter) but with different table contexts
+
+5. LTV calculation is AUTOMATIC via trigger, but can be manually recalculated
+   using the recalculate_* functions if needed
+
+6. Webhook data enters via func_upsert_contact_from_webhook() and then
+   triggers take over for downstream updates
+
+================================================================================
