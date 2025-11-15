@@ -91,7 +91,25 @@ CREATE TABLE IF NOT EXISTS "0b_inbox_counters" (
     completed_count   INT NOT NULL DEFAULT 0,  -- Status mudado pelo Humano
     cancelled_count   INT NOT NULL DEFAULT 0,  -- Status mudado pelo Humano/IA
     rescheduled_count INT NOT NULL DEFAULT 0,  -- Status mudado pelo Humano
-    no_show_count     INT NOT NULL DEFAULT 0   -- Status mudado pelo Humano
+    no_show_count     INT NOT NULL DEFAULT 0,  -- Status mudado pelo Humano
+
+    -- Taxas de conversão calculadas automaticamente (em tempo real)
+    -- Formato: 0.9310 = 93.10% (confirmados/agendados)
+    confirmed_rate    DECIMAL(5,4) GENERATED ALWAYS AS (
+        CASE WHEN scheduled_count > 0 THEN ROUND(confirmed_count::DECIMAL / scheduled_count, 4) ELSE 0 END
+    ) STORED,
+    completed_rate    DECIMAL(5,4) GENERATED ALWAYS AS (
+        CASE WHEN scheduled_count > 0 THEN ROUND(completed_count::DECIMAL / scheduled_count, 4) ELSE 0 END
+    ) STORED,
+    cancelled_rate    DECIMAL(5,4) GENERATED ALWAYS AS (
+        CASE WHEN scheduled_count > 0 THEN ROUND(cancelled_count::DECIMAL / scheduled_count, 4) ELSE 0 END
+    ) STORED,
+    rescheduled_rate  DECIMAL(5,4) GENERATED ALWAYS AS (
+        CASE WHEN scheduled_count > 0 THEN ROUND(rescheduled_count::DECIMAL / scheduled_count, 4) ELSE 0 END
+    ) STORED,
+    no_show_rate      DECIMAL(5,4) GENERATED ALWAYS AS (
+        CASE WHEN scheduled_count > 0 THEN ROUND(no_show_count::DECIMAL / scheduled_count, 4) ELSE 0 END
+    ) STORED
 );
 
 -- ================================================================
