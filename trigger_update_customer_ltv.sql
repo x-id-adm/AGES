@@ -1,125 +1,125 @@
 -- =================================================================================================
--- TRIGGER: ATUALIZAÇÃO AUTOMÁTICA DE LTV (LIFETIME VALUE)
+-- TRIGGER: AUTOMATIC LTV (LIFETIME VALUE) UPDATE
 -- =================================================================================================
--- DESCRIÇÃO:
---   Trigger que atualiza automaticamente os campos de LTV na tabela 3a_customer_root_record
---   sempre que um atendimento é marcado como 'Completed'.
+-- DESCRIPTION:
+--   Trigger that automatically updates LTV fields in table 3a_customer_root_record
+--   whenever an appointment is marked as 'Completed'.
 --
--- COMPORTAMENTO:
---   - Dispara quando service_status muda para 'Completed'
---   - Atualiza total_spent_cents, total_completed_appointments
---   - Atualiza first_purchase_at (se for a primeira compra)
---   - Atualiza last_purchase_at
+-- BEHAVIOR:
+--   - Triggers when service_status changes to 'Completed'
+--   - Updates total_spent_cents, total_completed_appointments
+--   - Updates first_purchase_at (if it's the first purchase)
+--   - Updates last_purchase_at
 --
--- IMPORTANTE:
---   - Apenas atendimentos com value_cents > 0 são considerados
---   - Não conta o mesmo atendimento duas vezes
---   - Funciona tanto para INSERT quanto para UPDATE
+-- IMPORTANT:
+--   - Only appointments with value_cents > 0 are considered
+--   - Does not count the same appointment twice
+--   - Works for both INSERT and UPDATE operations
 --
--- VERSÃO: 1.0
--- DATA: 2025-11-15
+-- VERSION: 1.0
+-- DATE: 2025-11-15
 -- =================================================================================================
 
 
 -- =================================================================================================
--- FUNÇÃO DO TRIGGER
+-- TRIGGER FUNCTION
 -- =================================================================================================
 
 -- ┌─────────────────────────────────────────────────────────────────────────────────────────────┐
--- │ FUNÇÃO: func_update_customer_ltv                                                            │
+-- │ FUNCTION: update_customer_ltv                                                               │
 -- ├─────────────────────────────────────────────────────────────────────────────────────────────┤
--- │ PROPÓSITO:                                                                                  │
--- │   Função que é chamada pelo trigger para atualizar os campos de LTV do cliente.             │
+-- │ PURPOSE:                                                                                    │
+-- │   Function called by trigger to update customer LTV fields.                                 │
 -- │                                                                                             │
--- │ LÓGICA:                                                                                     │
--- │   1. Verifica se é um INSERT ou UPDATE                                                      │
--- │   2. Se for UPDATE:                                                                         │
--- │      - Verifica se o status mudou de algo diferente para 'Completed'                        │
--- │      - Se o status antigo já era 'Completed', não faz nada (evita duplicação)               │
--- │   3. Se for INSERT:                                                                         │
--- │      - Verifica se o status é 'Completed'                                                   │
--- │   4. Verifica se value_cents está definido e > 0                                            │
--- │   5. Atualiza os campos na tabela 3a_customer_root_record:                                  │
--- │      - Incrementa total_spent_cents                                                         │
--- │      - Incrementa total_completed_appointments                                              │
--- │      - Atualiza last_purchase_at                                                            │
--- │      - Define first_purchase_at se for a primeira compra                                    │
+-- │ LOGIC:                                                                                      │
+-- │   1. Check if it's an INSERT or UPDATE                                                      │
+-- │   2. If UPDATE:                                                                             │
+-- │      - Check if status changed from something else to 'Completed'                           │
+-- │      - If old status was already 'Completed', do nothing (avoid duplication)                │
+-- │   3. If INSERT:                                                                             │
+-- │      - Check if status is 'Completed'                                                       │
+-- │   4. Check if value_cents is defined and > 0                                                │
+-- │   5. Update fields in table 3a_customer_root_record:                                        │
+-- │      - Increment total_spent_cents                                                          │
+-- │      - Increment total_completed_appointments                                               │
+-- │      - Update last_purchase_at                                                              │
+-- │      - Set first_purchase_at if it's the first purchase                                     │
 -- │                                                                                             │
--- │ PARÂMETROS:                                                                                 │
--- │   NEW - Registro novo (após INSERT/UPDATE)                                                  │
--- │   OLD - Registro antigo (antes do UPDATE, NULL em INSERT)                                   │
+-- │ PARAMETERS:                                                                                 │
+-- │   NEW - New record (after INSERT/UPDATE)                                                    │
+-- │   OLD - Old record (before UPDATE, NULL on INSERT)                                          │
 -- │                                                                                             │
--- │ RETORNO:                                                                                    │
--- │   NEW (padrão para triggers BEFORE)                                                         │
+-- │ RETURN:                                                                                     │
+-- │   NEW (standard for BEFORE triggers)                                                        │
 -- └─────────────────────────────────────────────────────────────────────────────────────────────┘
-CREATE OR REPLACE FUNCTION func_update_customer_ltv()
+CREATE OR REPLACE FUNCTION update_customer_ltv()
 RETURNS TRIGGER AS $$
 DECLARE
     v_should_update BOOLEAN := FALSE;
 BEGIN
     -- ========================================
-    -- VALIDAÇÕES: Determinar se deve atualizar
+    -- VALIDATIONS: Determine if should update
     -- ========================================
 
-    -- Caso 1: INSERT - verifica se já está como Completed
+    -- Case 1: INSERT - check if already Completed
     IF TG_OP = 'INSERT' THEN
         IF NEW.service_status = 'Completed' THEN
             v_should_update := TRUE;
         END IF;
     END IF;
 
-    -- Caso 2: UPDATE - verifica se mudou para Completed
+    -- Case 2: UPDATE - check if changed to Completed
     IF TG_OP = 'UPDATE' THEN
-        -- Só atualiza se:
-        -- 1. Status mudou para 'Completed' E
-        -- 2. Status anterior era diferente de 'Completed'
-        -- (evita contar duas vezes o mesmo atendimento)
+        -- Only update if:
+        -- 1. Status changed to 'Completed' AND
+        -- 2. Previous status was different from 'Completed'
+        -- (avoid counting the same appointment twice)
         IF NEW.service_status = 'Completed' AND OLD.service_status != 'Completed' THEN
             v_should_update := TRUE;
         END IF;
     END IF;
 
-    -- Validação adicional: deve ter value_cents válido
+    -- Additional validation: must have valid value_cents
     IF v_should_update THEN
         IF NEW.value_cents IS NULL OR NEW.value_cents <= 0 THEN
             v_should_update := FALSE;
         END IF;
     END IF;
 
-    -- Se não deve atualizar, retorna sem fazer nada
+    -- If should not update, return without doing anything
     IF NOT v_should_update THEN
         RETURN NEW;
     END IF;
 
     -- ========================================
-    -- ATUALIZAÇÃO DO LTV
+    -- LTV UPDATE
     -- ========================================
 
-    -- Atualiza os campos de LTV na ficha do cliente
+    -- Update LTV fields in customer record
     UPDATE "3a_customer_root_record"
     SET
-        -- Incrementa o total gasto
+        -- Increment total spent
         total_spent_cents = total_spent_cents + NEW.value_cents,
 
-        -- Incrementa a quantidade de atendimentos completados
+        -- Increment completed appointments count
         total_completed_appointments = total_completed_appointments + 1,
 
-        -- Atualiza a data da última compra
+        -- Update last purchase date
         last_purchase_at = NEW.completed_at,
 
-        -- Define a data da primeira compra (se ainda não foi definida)
+        -- Set first purchase date (if not yet set)
         first_purchase_at = CASE
             WHEN first_purchase_at IS NULL THEN NEW.completed_at
             ELSE first_purchase_at
         END,
 
-        -- Atualiza o timestamp de modificação
+        -- Update modification timestamp
         updated_at = NOW()
 
     WHERE id = NEW.root_id;
 
-    -- Log de debug (opcional - comentar em produção se não necessário)
-    RAISE NOTICE 'LTV atualizado para root_id %: +% centavos (total agora: %)',
+    -- Debug log (optional - comment in production if not needed)
+    RAISE NOTICE 'LTV updated for root_id %: +% cents (total now: %)',
         NEW.root_id,
         NEW.value_cents,
         (SELECT total_spent_cents FROM "3a_customer_root_record" WHERE id = NEW.root_id);
@@ -130,47 +130,47 @@ $$ LANGUAGE plpgsql;
 
 
 -- =================================================================================================
--- CRIAÇÃO DO TRIGGER
+-- TRIGGER CREATION
 -- =================================================================================================
 
--- Remove o trigger se já existir (para permitir re-execução do script)
+-- Drop trigger if exists (to allow script re-execution)
 DROP TRIGGER IF EXISTS trigger_update_customer_ltv ON "4a_customer_service_history";
 
--- Cria o trigger
+-- Create trigger
 CREATE TRIGGER trigger_update_customer_ltv
     AFTER INSERT OR UPDATE OF service_status
     ON "4a_customer_service_history"
     FOR EACH ROW
-    EXECUTE FUNCTION func_update_customer_ltv();
+    EXECUTE FUNCTION update_customer_ltv();
 
 
 -- =================================================================================================
--- FUNÇÃO AUXILIAR: Recalcular LTV manualmente
+-- HELPER FUNCTION: Manually Recalculate LTV
 -- =================================================================================================
 
 -- ┌─────────────────────────────────────────────────────────────────────────────────────────────┐
--- │ FUNÇÃO: func_recalculate_customer_ltv                                                       │
+-- │ FUNCTION: recalculate_customer_ltv                                                          │
 -- ├─────────────────────────────────────────────────────────────────────────────────────────────┤
--- │ PROPÓSITO:                                                                                  │
--- │   Recalcula o LTV de um cliente específico baseado em todos os seus atendimentos.           │
--- │   Útil para corrigir dados ou inicializar valores.                                          │
+-- │ PURPOSE:                                                                                    │
+-- │   Recalculates a customer's LTV based on all their appointments.                            │
+-- │   Useful for fixing data or initializing values.                                            │
 -- │                                                                                             │
--- │ PARÂMETROS:                                                                                 │
--- │   p_root_id (BIGINT) - ID da ficha do cliente                                               │
+-- │ PARAMETERS:                                                                                 │
+-- │   p_root_id (BIGINT) - Customer record ID                                                   │
 -- │                                                                                             │
--- │ RETORNO:                                                                                    │
--- │   JSONB com os novos valores calculados                                                     │
+-- │ RETURN:                                                                                     │
+-- │   JSONB with newly calculated values                                                        │
 -- │                                                                                             │
--- │ EXEMPLO DE USO:                                                                             │
--- │   -- Recalcular LTV de um cliente específico                                                │
--- │   SELECT func_recalculate_customer_ltv(123);                                                │
+-- │ USAGE EXAMPLE:                                                                              │
+-- │   -- Recalculate LTV for specific customer                                                  │
+-- │   SELECT recalculate_customer_ltv(123);                                                     │
 -- │                                                                                             │
--- │   -- Recalcular LTV de todos os clientes de uma inbox                                       │
--- │   SELECT func_recalculate_customer_ltv(id)                                                  │
+-- │   -- Recalculate LTV for all customers in an inbox                                          │
+-- │   SELECT recalculate_customer_ltv(id)                                                       │
 -- │   FROM "3a_customer_root_record"                                                            │
--- │   WHERE inbox_id = 'uuid-inbox';                                                            │
+-- │   WHERE inbox_id = 'inbox-uuid';                                                            │
 -- └─────────────────────────────────────────────────────────────────────────────────────────────┘
-CREATE OR REPLACE FUNCTION func_recalculate_customer_ltv(
+CREATE OR REPLACE FUNCTION recalculate_customer_ltv(
     p_root_id BIGINT
 )
 RETURNS JSONB AS $$
@@ -181,7 +181,7 @@ DECLARE
     v_last_purchase TIMESTAMPTZ;
     v_result JSONB;
 BEGIN
-    -- Calcula valores agregados de todos os atendimentos completados
+    -- Calculate aggregated values from all completed appointments
     SELECT
         COALESCE(SUM(value_cents), 0),
         COUNT(*),
@@ -198,7 +198,7 @@ BEGIN
       AND value_cents IS NOT NULL
       AND value_cents > 0;
 
-    -- Atualiza a ficha do cliente
+    -- Update customer record
     UPDATE "3a_customer_root_record"
     SET
         total_spent_cents = v_total_cents,
@@ -208,11 +208,11 @@ BEGIN
         updated_at = NOW()
     WHERE id = p_root_id;
 
-    -- Retorna os valores calculados
+    -- Return calculated values
     v_result := jsonb_build_object(
         'root_id', p_root_id,
         'total_spent_cents', v_total_cents,
-        'total_spent_reais', ROUND(v_total_cents::NUMERIC / 100, 2),
+        'total_spent_currency', ROUND(v_total_cents::NUMERIC / 100, 2),
         'total_completed_appointments', v_completed_count,
         'first_purchase_at', v_first_purchase,
         'last_purchase_at', v_last_purchase
@@ -224,26 +224,26 @@ $$ LANGUAGE plpgsql;
 
 
 -- =================================================================================================
--- FUNÇÃO AUXILIAR: Recalcular LTV de todos os clientes de uma inbox
+-- HELPER FUNCTION: Recalculate LTV for All Customers in an Inbox
 -- =================================================================================================
 
 -- ┌─────────────────────────────────────────────────────────────────────────────────────────────┐
--- │ FUNÇÃO: func_recalculate_all_ltv_for_inbox                                                  │
+-- │ FUNCTION: recalculate_all_ltv_for_inbox                                                     │
 -- ├─────────────────────────────────────────────────────────────────────────────────────────────┤
--- │ PROPÓSITO:                                                                                  │
--- │   Recalcula o LTV de todos os clientes de uma inbox.                                        │
--- │   Útil para inicializar valores ou corrigir inconsistências em massa.                       │
+-- │ PURPOSE:                                                                                    │
+-- │   Recalculates LTV for all customers in an inbox.                                           │
+-- │   Useful for initializing values or fixing inconsistencies in bulk.                         │
 -- │                                                                                             │
--- │ PARÂMETROS:                                                                                 │
--- │   p_inbox_id (UUID) - ID da inbox                                                           │
+-- │ PARAMETERS:                                                                                 │
+-- │   p_inbox_id (UUID) - Inbox ID                                                              │
 -- │                                                                                             │
--- │ RETORNO:                                                                                    │
--- │   JSONB com estatísticas da operação                                                        │
+-- │ RETURN:                                                                                     │
+-- │   JSONB with operation statistics                                                           │
 -- │                                                                                             │
--- │ EXEMPLO DE USO:                                                                             │
--- │   SELECT func_recalculate_all_ltv_for_inbox('uuid-inbox');                                  │
+-- │ USAGE EXAMPLE:                                                                              │
+-- │   SELECT recalculate_all_ltv_for_inbox('inbox-uuid');                                       │
 -- └─────────────────────────────────────────────────────────────────────────────────────────────┘
-CREATE OR REPLACE FUNCTION func_recalculate_all_ltv_for_inbox(
+CREATE OR REPLACE FUNCTION recalculate_all_ltv_for_inbox(
     p_inbox_id UUID
 )
 RETURNS JSONB AS $$
@@ -255,28 +255,28 @@ DECLARE
 BEGIN
     v_customer_count := 0;
 
-    -- Loop por todos os clientes da inbox
+    -- Loop through all customers in inbox
     FOR v_customer IN
         SELECT id FROM "3a_customer_root_record"
         WHERE inbox_id = p_inbox_id
     LOOP
-        -- Recalcula o LTV do cliente
-        PERFORM func_recalculate_customer_ltv(v_customer.id);
+        -- Recalculate customer LTV
+        PERFORM recalculate_customer_ltv(v_customer.id);
         v_customer_count := v_customer_count + 1;
     END LOOP;
 
-    -- Calcula o faturamento total da inbox
+    -- Calculate total inbox billing
     SELECT COALESCE(SUM(total_spent_cents), 0)
     INTO v_total_billing
     FROM "3a_customer_root_record"
     WHERE inbox_id = p_inbox_id;
 
-    -- Retorna estatísticas
+    -- Return statistics
     v_result := jsonb_build_object(
         'inbox_id', p_inbox_id,
         'customers_processed', v_customer_count,
         'total_billing_cents', v_total_billing,
-        'total_billing_reais', ROUND(v_total_billing::NUMERIC / 100, 2),
+        'total_billing_currency', ROUND(v_total_billing::NUMERIC / 100, 2),
         'recalculated_at', NOW()
     );
 
@@ -286,14 +286,14 @@ $$ LANGUAGE plpgsql;
 
 
 -- =================================================================================================
--- RESUMO
+-- SUMMARY
 -- =================================================================================================
--- Trigger criado: trigger_update_customer_ltv
---   - Dispara em: INSERT ou UPDATE de service_status na tabela 4a_customer_service_history
---   - Quando: service_status muda para 'Completed' e value_cents > 0
---   - Atualiza: Campos de LTV na tabela 3a_customer_root_record
+-- Trigger created: trigger_update_customer_ltv
+--   - Fires on: INSERT or UPDATE of service_status in table 4a_customer_service_history
+--   - When: service_status changes to 'Completed' and value_cents > 0
+--   - Updates: LTV fields in table 3a_customer_root_record
 --
--- Funções auxiliares criadas:
---   • func_recalculate_customer_ltv(p_root_id) - Recalcula LTV de um cliente
---   • func_recalculate_all_ltv_for_inbox(p_inbox_id) - Recalcula LTV de todos os clientes
+-- Helper functions created:
+--   • recalculate_customer_ltv(p_root_id) - Recalculate LTV for one customer
+--   • recalculate_all_ltv_for_inbox(p_inbox_id) - Recalculate LTV for all customers
 -- =================================================================================================

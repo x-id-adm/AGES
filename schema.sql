@@ -215,11 +215,22 @@ CREATE TABLE IF NOT EXISTS "3a_customer_root_record" (
     -- Controle de formulário completo (baseado em required_data_form da inbox)
     is_form_complete    BOOLEAN NOT NULL DEFAULT FALSE,
 
+    -- LTV (Lifetime Value) - Billing metrics
+    total_spent_cents            BIGINT NOT NULL DEFAULT 0 CHECK (total_spent_cents >= 0),
+    total_completed_appointments INTEGER NOT NULL DEFAULT 0 CHECK (total_completed_appointments >= 0),
+    first_purchase_at            TIMESTAMPTZ,
+    last_purchase_at             TIMESTAMPTZ,
+
     created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_customer_inbox    ON "3a_customer_root_record"(inbox_id);
 CREATE INDEX IF NOT EXISTS idx_customer_whatsapp ON "3a_customer_root_record"(whatsapp_owner) WHERE whatsapp_owner IS NOT NULL;
+
+-- Indexes for LTV queries
+CREATE INDEX IF NOT EXISTS idx_customer_total_spent ON "3a_customer_root_record"(total_spent_cents DESC) WHERE total_spent_cents > 0;
+CREATE INDEX IF NOT EXISTS idx_customer_last_purchase ON "3a_customer_root_record"(last_purchase_at DESC) WHERE last_purchase_at IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_customer_completed_count ON "3a_customer_root_record"(total_completed_appointments DESC) WHERE total_completed_appointments > 0;
 
 -- 3b. Guarda os telefones celular do cliente (1-para-N)
 CREATE TABLE IF NOT EXISTS "3b_cell_phone_linked_service_sheet" (

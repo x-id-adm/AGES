@@ -1,63 +1,62 @@
-# Métricas de Faturamento e LTV (Lifetime Value)
+# Billing Metrics & LTV (Lifetime Value)
 
-## 📊 Visão Geral
+## 📊 Overview
 
-Este módulo implementa rastreamento completo de faturamento com duas funcionalidades principais:
+This module implements complete billing tracking with two main features:
 
-1. **Faturamento por Tempo**: Quanto foi faturado em períodos específicos (hoje, últimos 7 dias, janeiro, etc.)
-2. **Faturamento por Cliente (LTV)**: Quanto cada cliente já gastou ao longo do tempo
+1. **Time-Based Billing**: How much was billed in specific periods (today, last 7 days, January, etc.)
+2. **Customer-Based Billing (LTV)**: How much each customer has spent over time
+
+**Currency-agnostic**: Works with any currency (USD, BRL, EUR, etc.) - all values stored in cents
 
 ---
 
-## 🚀 Instalação
+## 🚀 Installation
 
-Execute os arquivos SQL na seguinte ordem:
+Execute SQL files in this order:
 
 ```bash
-# 1. Schema principal (se ainda não executou)
-psql -d seu_banco < schema.sql
+# 1. Main schema (if not already executed)
+psql -d your_database < schema.sql
 
-# 2. Adicionar campos de LTV
-psql -d seu_banco < schema_billing_ltv.sql
+# 2. Create billing functions
+psql -d your_database < functions_billing_metrics.sql
 
-# 3. Criar funções de faturamento
-psql -d seu_banco < functions_billing_metrics.sql
+# 3. Create automatic update trigger
+psql -d your_database < trigger_update_customer_ltv.sql
 
-# 4. Criar trigger de atualização automática
-psql -d seu_banco < trigger_update_customer_ltv.sql
-
-# 5. (Opcional) Executar testes
-psql -d seu_banco < test_billing_metrics.sql
+# 4. (Optional) Run tests
+psql -d your_database < test_billing_metrics.sql
 ```
 
 ---
 
-## 📋 O que foi criado?
+## 📋 What Was Created?
 
-### 1. Novos Campos na Tabela `3a_customer_root_record`
+### 1. New Fields in `3a_customer_root_record` Table
 
-| Campo | Tipo | Descrição |
-|-------|------|-----------|
-| `total_spent_cents` | INTEGER | Valor total gasto pelo cliente (em centavos) |
-| `total_completed_appointments` | INTEGER | Quantidade de atendimentos completados |
-| `first_purchase_at` | TIMESTAMPTZ | Data da primeira compra |
-| `last_purchase_at` | TIMESTAMPTZ | Data da última compra |
+| Field | Type | Description |
+|-------|------|-------------|
+| `total_spent_cents` | BIGINT | Total amount spent by customer (in cents) |
+| `total_completed_appointments` | INTEGER | Number of completed appointments |
+| `first_purchase_at` | TIMESTAMPTZ | First purchase date |
+| `last_purchase_at` | TIMESTAMPTZ | Last purchase date |
 
-### 2. Funções de Faturamento por Tempo
+### 2. Time-Based Billing Functions
 
-#### Faturamento de hoje
+#### Today's Billing
 ```sql
-SELECT func_get_billing_today('uuid-da-inbox');
+SELECT get_billing_today('inbox-uuid');
 ```
 
-**Retorna:**
+**Returns:**
 ```json
 {
   "total_billing_cents": 45000,
-  "total_billing_reais": 450.00,
+  "total_billing_currency": 450.00,
   "completed_count": 15,
   "average_ticket_cents": 3000,
-  "average_ticket_reais": 30.00,
+  "average_ticket_currency": 30.00,
   "period": {
     "start": "2025-11-15T00:00:00Z",
     "end": "2025-11-15T14:30:00Z"
@@ -65,99 +64,99 @@ SELECT func_get_billing_today('uuid-da-inbox');
 }
 ```
 
-#### Faturamento dos últimos N dias
+#### Last N Days Billing
 ```sql
--- Últimos 7 dias
-SELECT func_get_billing_last_n_days('uuid-da-inbox', 7);
+-- Last 7 days
+SELECT get_billing_last_n_days('inbox-uuid', 7);
 
--- Últimos 30 dias
-SELECT func_get_billing_last_n_days('uuid-da-inbox', 30);
+-- Last 30 days
+SELECT get_billing_last_n_days('inbox-uuid', 30);
 ```
 
-#### Faturamento de um mês específico
+#### Specific Month Billing
 ```sql
--- Janeiro de 2025
-SELECT func_get_billing_specific_month('uuid-da-inbox', 2025, 1);
+-- January 2025
+SELECT get_billing_specific_month('inbox-uuid', 2025, 1);
 
--- Dezembro de 2024
-SELECT func_get_billing_specific_month('uuid-da-inbox', 2024, 12);
+-- December 2024
+SELECT get_billing_specific_month('inbox-uuid', 2024, 12);
 ```
 
-#### Faturamento de um período customizado
+#### Custom Period Billing
 ```sql
-SELECT func_get_billing_by_period(
-    'uuid-da-inbox',
+SELECT get_billing_by_period(
+    'inbox-uuid',
     '2025-01-01 00:00:00'::TIMESTAMPTZ,
     '2025-01-31 23:59:59'::TIMESTAMPTZ
 );
 ```
 
-### 3. Funções de LTV por Cliente
+### 3. Customer LTV Functions
 
-#### LTV de um cliente específico
+#### Specific Customer LTV
 ```sql
-SELECT func_get_customer_ltv(123);  -- root_id do cliente
+SELECT get_customer_ltv(123);  -- customer root_id
 ```
 
-**Retorna:**
+**Returns:**
 ```json
 {
   "root_id": 123,
   "client_id": "CT456",
-  "treatment_name": "João Silva",
+  "treatment_name": "John Doe",
   "total_spent_cents": 60000,
-  "total_spent_reais": 600.00,
+  "total_spent_currency": 600.00,
   "total_completed_appointments": 3,
   "average_ticket_cents": 20000,
-  "average_ticket_reais": 200.00,
+  "average_ticket_currency": 200.00,
   "first_purchase_at": "2025-01-15T10:00:00Z",
   "last_purchase_at": "2025-11-10T14:30:00Z",
   "customer_lifetime_days": 299
 }
 ```
 
-#### Top clientes por LTV
+#### Top Customers by LTV
 ```sql
--- Top 10 clientes
-SELECT func_get_top_customers_by_ltv('uuid-da-inbox', 10);
+-- Top 10 customers
+SELECT get_top_customers_by_ltv('inbox-uuid', 10);
 
--- Top 50 clientes
-SELECT func_get_top_customers_by_ltv('uuid-da-inbox', 50);
+-- Top 50 customers
+SELECT get_top_customers_by_ltv('inbox-uuid', 50);
 ```
 
-### 4. View de Resumo
+### 4. Summary View
 
-#### Ver todos os clientes ordenados por LTV
+#### View All Customers Ordered by LTV
 ```sql
 SELECT *
 FROM vw_customer_billing_summary
-WHERE inbox_id = 'uuid-da-inbox'
+WHERE inbox_id = 'inbox-uuid'
 ORDER BY total_spent_cents DESC
 LIMIT 20;
 ```
 
-#### Filtrar clientes que gastaram mais de R$ 1000
+#### Filter Customers Who Spent More Than 100000 Cents
 ```sql
 SELECT *
 FROM vw_customer_billing_summary
-WHERE total_spent_reais > 1000
-  AND inbox_id = 'uuid-da-inbox'
+WHERE total_spent_currency > 1000
+  AND inbox_id = 'inbox-uuid'
 ORDER BY total_spent_cents DESC;
 ```
 
 ---
 
-## 🔄 Atualização Automática (Trigger)
+## 🔄 Automatic Update (Trigger)
 
-O LTV é atualizado **automaticamente** quando:
+LTV is updated **automatically** when:
 
-1. Um atendimento é criado já com status `'Completed'`
-2. Um atendimento tem seu status alterado para `'Completed'`
+1. An appointment is created with status `'Completed'`
+2. An appointment has its status changed to `'Completed'`
 
-### Como funciona o operador humano:
+### How the Human Operator Works:
 
 ```sql
--- 1. Operador cria o atendimento
+-- 1. Operator creates appointment
 INSERT INTO "4a_customer_service_history" (
     service_id,
     inbox_id,
@@ -170,128 +169,128 @@ INSERT INTO "4a_customer_service_history" (
     created_at
 ) VALUES (
     'AT123',
-    'uuid-da-inbox',
-    456,  -- root_id do cliente
+    'inbox-uuid',
+    456,  -- customer root_id
     NOW(),
     NOW() + INTERVAL '1 hour',
     'Scheduled',
-    20000,  -- R$ 200.00
+    20000,  -- 200.00 in currency
     NOW(),
     NOW()
 );
 
--- 2. Quando o atendimento termina, operador muda o status
+-- 2. When appointment finishes, operator changes status
 UPDATE "4a_customer_service_history"
 SET
     service_status = 'Completed',
     completed_at = NOW()
 WHERE service_id = 'AT123';
 
--- 3. O trigger AUTOMATICAMENTE atualiza o LTV do cliente:
---    - Soma R$ 200.00 ao total_spent_cents
---    - Incrementa total_completed_appointments
---    - Atualiza last_purchase_at
---    - Se for a primeira compra, define first_purchase_at
+-- 3. Trigger AUTOMATICALLY updates customer LTV:
+--    - Adds 200.00 to total_spent_cents
+--    - Increments total_completed_appointments
+--    - Updates last_purchase_at
+--    - If first purchase, sets first_purchase_at
 ```
 
-### Importante: Evita Duplicação
+### Important: Prevents Duplication
 
-O trigger é inteligente e **NÃO duplica valores**:
+The trigger is smart and **DOES NOT duplicate values**:
 
-- Se você atualizar um atendimento que JÁ está `'Completed'`, não soma novamente
-- Se você atualizar apenas outros campos (notes, attachments), não afeta o LTV
-- Se `value_cents` for `NULL` ou `0`, não atualiza o LTV
+- If you update an appointment that is ALREADY `'Completed'`, it won't add again
+- If you only update other fields (notes, attachments), it doesn't affect LTV
+- If `value_cents` is `NULL` or `0`, it doesn't update LTV
 
 ---
 
-## 🛠️ Funções Auxiliares
+## 🛠️ Helper Functions
 
-### Recalcular LTV de um cliente
+### Recalculate Customer LTV
 
-Se você precisar recalcular o LTV de um cliente (para corrigir inconsistências):
-
-```sql
-SELECT func_recalculate_customer_ltv(123);  -- root_id do cliente
-```
-
-### Recalcular LTV de todos os clientes de uma inbox
+If you need to recalculate a customer's LTV (to fix inconsistencies):
 
 ```sql
-SELECT func_recalculate_all_ltv_for_inbox('uuid-da-inbox');
+SELECT recalculate_customer_ltv(123);  -- customer root_id
 ```
 
-**Retorna:**
+### Recalculate LTV for All Customers in Inbox
+
+```sql
+SELECT recalculate_all_ltv_for_inbox('inbox-uuid');
+```
+
+**Returns:**
 ```json
 {
-  "inbox_id": "uuid-da-inbox",
+  "inbox_id": "inbox-uuid",
   "customers_processed": 150,
   "total_billing_cents": 1500000,
-  "total_billing_reais": 15000.00,
+  "total_billing_currency": 15000.00,
   "recalculated_at": "2025-11-15T14:30:00Z"
 }
 ```
 
 ---
 
-## 📊 Exemplos de Uso
+## 📊 Usage Examples
 
-### Dashboard de Faturamento
+### Billing Dashboard
 
 ```sql
--- Faturamento de hoje
+-- Today's billing
 SELECT
-    (result->>'total_billing_reais')::NUMERIC as hoje,
-    (result->>'completed_count')::INT as atendimentos_hoje
+    (result->>'total_billing_currency')::NUMERIC as today,
+    (result->>'completed_count')::INT as appointments_today
 FROM (
-    SELECT func_get_billing_today('uuid-da-inbox') as result
+    SELECT get_billing_today('inbox-uuid') as result
 ) sub;
 
--- Faturamento dos últimos 7 dias
+-- Last 7 days billing
 SELECT
-    (result->>'total_billing_reais')::NUMERIC as ultimos_7_dias,
-    (result->>'average_ticket_reais')::NUMERIC as ticket_medio
+    (result->>'total_billing_currency')::NUMERIC as last_7_days,
+    (result->>'average_ticket_currency')::NUMERIC as avg_ticket
 FROM (
-    SELECT func_get_billing_last_n_days('uuid-da-inbox', 7) as result
+    SELECT get_billing_last_n_days('inbox-uuid', 7) as result
 ) sub;
 
--- Faturamento do mês atual
+-- Current month billing
 SELECT
-    (result->>'total_billing_reais')::NUMERIC as mes_atual,
-    (result->>'completed_count')::INT as atendimentos_mes
+    (result->>'total_billing_currency')::NUMERIC as current_month,
+    (result->>'completed_count')::INT as appointments_month
 FROM (
-    SELECT func_get_billing_specific_month(
-        'uuid-da-inbox',
+    SELECT get_billing_specific_month(
+        'inbox-uuid',
         EXTRACT(YEAR FROM NOW())::INT,
         EXTRACT(MONTH FROM NOW())::INT
     ) as result
 ) sub;
 ```
 
-### Dashboard de Clientes (LTV)
+### Customer Dashboard (LTV)
 
 ```sql
--- Top 10 clientes
+-- Top 10 customers
 SELECT
-    (customer->>'treatment_name')::TEXT as cliente,
-    (customer->>'total_spent_reais')::NUMERIC as total_gasto,
-    (customer->>'total_completed_appointments')::INT as atendimentos,
-    (customer->>'average_ticket_reais')::NUMERIC as ticket_medio
+    (customer->>'treatment_name')::TEXT as customer,
+    (customer->>'total_spent_currency')::NUMERIC as total_spent,
+    (customer->>'total_completed_appointments')::INT as appointments,
+    (customer->>'average_ticket_currency')::NUMERIC as avg_ticket
 FROM (
     SELECT jsonb_array_elements(
-        func_get_top_customers_by_ltv('uuid-da-inbox', 10)
+        get_top_customers_by_ltv('inbox-uuid', 10)
     ) as customer
 ) sub;
 ```
 
-### Análise de Cliente Individual
+### Individual Customer Analysis
 
 ```sql
--- Ver tudo sobre um cliente específico
+-- View everything about a specific customer
 SELECT
     treatment_name,
-    total_spent_reais,
+    total_spent_currency,
     total_completed_appointments,
-    average_ticket_reais,
+    average_ticket_currency,
     customer_lifetime_days,
     first_purchase_at,
     last_purchase_at
@@ -301,176 +300,177 @@ WHERE root_id = 123;
 
 ---
 
-## 🔍 Queries Úteis
+## 🔍 Useful Queries
 
-### Clientes com maior LTV
+### Customers with Highest LTV
 ```sql
 SELECT
     treatment_name,
-    total_spent_reais,
+    total_spent_currency,
     total_completed_appointments,
-    average_ticket_reais
+    average_ticket_currency
 FROM vw_customer_billing_summary
-WHERE inbox_id = 'uuid-da-inbox'
+WHERE inbox_id = 'inbox-uuid'
 ORDER BY total_spent_cents DESC
 LIMIT 10;
 ```
 
-### Clientes mais frequentes
+### Most Frequent Customers
 ```sql
 SELECT
     treatment_name,
     total_completed_appointments,
-    total_spent_reais,
-    average_ticket_reais
+    total_spent_currency,
+    average_ticket_currency
 FROM vw_customer_billing_summary
-WHERE inbox_id = 'uuid-da-inbox'
+WHERE inbox_id = 'inbox-uuid'
 ORDER BY total_completed_appointments DESC
 LIMIT 10;
 ```
 
-### Clientes com maior ticket médio
+### Customers with Highest Average Ticket
 ```sql
 SELECT
     treatment_name,
-    average_ticket_reais,
+    average_ticket_currency,
     total_completed_appointments,
-    total_spent_reais
+    total_spent_currency
 FROM vw_customer_billing_summary
-WHERE inbox_id = 'uuid-da-inbox'
-  AND total_completed_appointments >= 3  -- Apenas clientes com pelo menos 3 atendimentos
+WHERE inbox_id = 'inbox-uuid'
+  AND total_completed_appointments >= 3  -- At least 3 appointments
 ORDER BY average_ticket_cents DESC
 LIMIT 10;
 ```
 
-### Faturamento comparativo mês a mês
+### Month-by-Month Billing Comparison
 ```sql
 SELECT
-    to_char(make_date(2025, mes, 1), 'Month YYYY') as periodo,
-    (func_get_billing_specific_month('uuid-da-inbox', 2025, mes)->>'total_billing_reais')::NUMERIC as faturamento,
-    (func_get_billing_specific_month('uuid-da-inbox', 2025, mes)->>'completed_count')::INT as atendimentos
-FROM generate_series(1, 12) as mes
-ORDER BY mes;
+    to_char(make_date(2025, month, 1), 'Month YYYY') as period,
+    (get_billing_specific_month('inbox-uuid', 2025, month)->>'total_billing_currency')::NUMERIC as billing,
+    (get_billing_specific_month('inbox-uuid', 2025, month)->>'completed_count')::INT as appointments
+FROM generate_series(1, 12) as month
+ORDER BY month;
 ```
 
 ---
 
-## 🎯 Casos de Uso
+## 🎯 Use Cases
 
-### 1. Quanto estou faturando hoje?
+### 1. How much am I billing today?
 ```sql
-SELECT func_get_billing_today('uuid-da-inbox');
+SELECT get_billing_today('inbox-uuid');
 ```
 
-### 2. Quanto faturei nos últimos 7 dias?
+### 2. How much did I bill in the last 7 days?
 ```sql
-SELECT func_get_billing_last_n_days('uuid-da-inbox', 7);
+SELECT get_billing_last_n_days('inbox-uuid', 7);
 ```
 
-### 3. Quanto faturei em Janeiro?
+### 3. How much did I bill in January?
 ```sql
-SELECT func_get_billing_specific_month('uuid-da-inbox', 2025, 1);
+SELECT get_billing_specific_month('inbox-uuid', 2025, 1);
 ```
 
-### 4. Quem são meus top 10 clientes?
+### 4. Who are my top 10 customers?
 ```sql
-SELECT func_get_top_customers_by_ltv('uuid-da-inbox', 10);
+SELECT get_top_customers_by_ltv('inbox-uuid', 10);
 ```
 
-### 5. Quanto um cliente específico já gastou?
+### 5. How much has a specific customer spent?
 ```sql
-SELECT func_get_customer_ltv(123);  -- root_id do cliente
+SELECT get_customer_ltv(123);  -- customer root_id
 ```
 
-### 6. Listar clientes que gastaram mais de R$ 500
+### 6. List customers who spent more than 50000 cents (500 in currency)
 ```sql
 SELECT
     treatment_name,
-    total_spent_reais,
+    total_spent_currency,
     total_completed_appointments
 FROM vw_customer_billing_summary
-WHERE total_spent_reais > 500
-  AND inbox_id = 'uuid-da-inbox'
-ORDER BY total_spent_reais DESC;
+WHERE total_spent_currency > 500
+  AND inbox_id = 'inbox-uuid'
+ORDER BY total_spent_currency DESC;
 ```
 
 ---
 
-## ⚙️ Detalhes Técnicos
+## ⚙️ Technical Details
 
-### Valores em Centavos
+### Values in Cents
 
-Todos os valores monetários são armazenados em **centavos** (INTEGER) para evitar problemas de arredondamento:
+All monetary values are stored in **cents** (INTEGER) to avoid rounding issues:
 
-- R$ 100.00 = 10000 centavos
-- R$ 50.50 = 5050 centavos
-- R$ 1234.56 = 123456 centavos
+- 100.00 in currency = 10000 cents
+- 50.50 in currency = 5050 cents
+- 1234.56 in currency = 123456 cents
 
-As funções retornam tanto o valor em centavos quanto em reais para conveniência.
+Functions return both cents and currency values for convenience.
 
 ### Performance
 
-- **Índices criados** para otimizar queries de LTV e ranking de clientes
-- **Campos calculados** são armazenados (não recalculados a cada query)
-- **Trigger otimizado** para evitar processamento desnecessário
+- **Indexes created** to optimize LTV and customer ranking queries
+- **Calculated fields** are stored (not recalculated on every query)
+- **Optimized trigger** to avoid unnecessary processing
 
-### Segurança
+### Security
 
-- Todas as funções validam os parâmetros de entrada
-- Transações são utilizadas para garantir consistência
-- Não há risco de duplicação de valores
+- All functions validate input parameters
+- Transactions used to ensure consistency
+- No risk of value duplication
 
 ---
 
-## 🧪 Testes
+## 🧪 Tests
 
-Execute o arquivo de testes para validar todas as funcionalidades:
+Run the test file to validate all functionalities:
 
 ```bash
-psql -d seu_banco < test_billing_metrics.sql
+psql -d your_database < test_billing_metrics.sql
 ```
 
-Os testes cobrem:
-- ✅ Trigger de LTV em INSERT
-- ✅ Trigger de LTV em UPDATE
-- ✅ Múltiplos clientes e atendimentos
-- ✅ Funções de faturamento por tempo
-- ✅ Funções de LTV por cliente
-- ✅ View de resumo
-- ✅ Recálculo de LTV
-- ✅ Edge cases (valores nulos, zeros, duplicação)
+Tests cover:
+- ✅ LTV trigger on INSERT
+- ✅ LTV trigger on UPDATE
+- ✅ Multiple customers and appointments
+- ✅ Time-based billing functions
+- ✅ Customer LTV functions
+- ✅ Summary view
+- ✅ LTV recalculation
+- ✅ Edge cases (null values, zeros, duplication)
 
 ---
 
-## 📝 Notas Importantes
+## 📝 Important Notes
 
-1. **Apenas atendimentos `'Completed'`** são considerados no faturamento
-2. **O campo `value_cents`** deve ser preenchido pelo operador ao completar o atendimento
-3. **O trigger é automático** - não é necessário atualizar o LTV manualmente
-4. **Valores em centavos** evitam problemas de arredondamento
-5. **Recalcular LTV** é seguro e pode ser feito a qualquer momento
+1. **Only `'Completed'` appointments** are considered in billing
+2. **The `value_cents` field** must be filled by operator when completing appointment
+3. **Trigger is automatic** - no need to manually update LTV
+4. **Values in cents** avoid rounding issues
+5. **Recalculating LTV** is safe and can be done anytime
+6. **Currency-agnostic** - works with any currency system
 
 ---
 
 ## 🆘 Troubleshooting
 
-### LTV não está sendo atualizado
+### LTV not being updated
 
-Verifique se:
-1. O trigger está criado: `\d+ "4a_customer_service_history"`
-2. O status foi alterado para `'Completed'`
-3. O campo `value_cents` tem um valor > 0
-4. O campo `completed_at` foi preenchido
+Check if:
+1. Trigger is created: `\d+ "4a_customer_service_history"`
+2. Status was changed to `'Completed'`
+3. Field `value_cents` has a value > 0
+4. Field `completed_at` was filled
 
-### Recalcular LTV de todos os clientes
+### Recalculate LTV for all customers
 
 ```sql
-SELECT func_recalculate_all_ltv_for_inbox('uuid-da-inbox');
+SELECT recalculate_all_ltv_for_inbox('inbox-uuid');
 ```
 
-### Ver logs do trigger
+### View trigger logs
 
-O trigger emite logs com `RAISE NOTICE`. Para ver:
+Trigger emits logs with `RAISE NOTICE`. To view:
 
 ```sql
 SET client_min_messages TO NOTICE;
@@ -478,15 +478,15 @@ SET client_min_messages TO NOTICE;
 
 ---
 
-## 📚 Referências
+## 📚 Files
 
-- `schema_billing_ltv.sql` - Schema dos campos de LTV
-- `functions_billing_metrics.sql` - Funções de faturamento e LTV
-- `trigger_update_customer_ltv.sql` - Trigger de atualização automática
-- `test_billing_metrics.sql` - Testes completos
+- `schema.sql` - Main schema with LTV fields
+- `functions_billing_metrics.sql` - Billing and LTV functions
+- `trigger_update_customer_ltv.sql` - Automatic update trigger
+- `test_billing_metrics.sql` - Complete tests
 
 ---
 
-**Versão:** 1.0
-**Data:** 2025-11-15
-**Autor:** Sistema AGES
+**Version:** 1.0
+**Date:** 2025-11-15
+**System:** AGES
