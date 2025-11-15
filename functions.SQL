@@ -1454,6 +1454,108 @@ $$ LANGUAGE plpgsql;
 -- -------------------------------------------------------------------------------------------------
 
 -- ┌─────────────────────────────────────────────────────────────────────────────────────────────┐
+-- │ FUNÇÃO: func_set_status_timestamp                                                           │
+-- ├─────────────────────────────────────────────────────────────────────────────────────────────┤
+-- │ PROPÓSITO:                                                                                  │
+-- │   Preenche automaticamente os campos de timestamp quando um status é aplicado a um          │
+-- │   agendamento. Permite rastrear QUANDO cada mudança de status aconteceu.                    │
+-- │                                                                                             │
+-- │ TIPO:                                                                                       │
+-- │   TRIGGER FUNCTION - Invocada automaticamente BEFORE INSERT OR UPDATE                       │
+-- │                                                                                             │
+-- │ LÓGICA:                                                                                     │
+-- │   INSERT (novo agendamento):                                                                │
+-- │     → Define o timestamp do status inicial (ex: scheduled_at = NOW())                       │
+-- │                                                                                             │
+-- │   UPDATE (mudança de status):                                                               │
+-- │     → Define o timestamp do NOVO status = NOW()                                             │
+-- │     → Mantém os timestamps dos status anteriores (histórico)                                │
+-- │                                                                                             │
+-- │ MAPEAMENTO STATUS → TIMESTAMP:                                                              │
+-- │   • 'Scheduled'   → scheduled_at                                                            │
+-- │   • 'Confirmed'   → confirmed_at                                                            │
+-- │   • 'Completed'   → completed_at                                                            │
+-- │   • 'Cancelled'   → cancelled_at                                                            │
+-- │   • 'Rescheduled' → rescheduled_at                                                          │
+-- │   • 'No_Show'     → no_show_at                                                              │
+-- │                                                                                             │
+-- │ EXEMPLO DE FLUXO:                                                                           │
+-- │   1. INSERT com service_status = 'Scheduled'                                                │
+-- │      → scheduled_at = '2025-01-15 10:00:00'                                                 │
+-- │                                                                                             │
+-- │   2. UPDATE service_status: 'Scheduled' → 'Confirmed'                                       │
+-- │      → scheduled_at = '2025-01-15 10:00:00' (mantém)                                        │
+-- │      → confirmed_at = '2025-01-20 14:30:00' (novo)                                          │
+-- │                                                                                             │
+-- │   3. UPDATE service_status: 'Confirmed' → 'Cancelled'                                       │
+-- │      → scheduled_at = '2025-01-15 10:00:00' (mantém)                                        │
+-- │      → confirmed_at = '2025-01-20 14:30:00' (mantém)                                        │
+-- │      → cancelled_at = '2025-02-01 09:15:00' (novo)                                          │
+-- │                                                                                             │
+-- │ USO EM QUERIES:                                                                             │
+-- │   -- Quantos foram cancelados em Fevereiro?                                                 │
+-- │   SELECT COUNT(*) FROM "4a_customer_service_history"                                        │
+-- │   WHERE cancelled_at >= '2025-02-01'                                                        │
+-- │     AND cancelled_at < '2025-03-01';                                                        │
+-- │                                                                                             │
+-- │ CARACTERÍSTICAS:                                                                            │
+-- │   ✓ Automático - Desenvolvedor não precisa preencher manualmente                            │
+-- │   ✓ Histórico - Preserva todos os timestamps de mudanças anteriores                         │
+-- │   ✓ Preciso - Usa NOW() no momento exato da mudança                                         │
+-- │   ✓ Indexado - Campos têm índices para performance em queries por período                   │
+-- └─────────────────────────────────────────────────────────────────────────────────────────────┘
+CREATE OR REPLACE FUNCTION func_set_status_timestamp()
+RETURNS TRIGGER AS $$
+BEGIN
+    -- Para INSERT: Define timestamp do status inicial
+    IF (TG_OP = 'INSERT') THEN
+        CASE NEW.service_status
+            WHEN 'Scheduled' THEN
+                NEW.scheduled_at := NOW();
+            WHEN 'Confirmed' THEN
+                NEW.confirmed_at := NOW();
+            WHEN 'Completed' THEN
+                NEW.completed_at := NOW();
+            WHEN 'Cancelled' THEN
+                NEW.cancelled_at := NOW();
+            WHEN 'Rescheduled' THEN
+                NEW.rescheduled_at := NOW();
+            WHEN 'No_Show' THEN
+                NEW.no_show_at := NOW();
+        END CASE;
+
+    -- Para UPDATE: Define timestamp apenas se o status mudou
+    ELSIF (TG_OP = 'UPDATE') THEN
+        IF OLD.service_status IS DISTINCT FROM NEW.service_status THEN
+            CASE NEW.service_status
+                WHEN 'Scheduled' THEN
+                    NEW.scheduled_at := NOW();
+                WHEN 'Confirmed' THEN
+                    NEW.confirmed_at := NOW();
+                WHEN 'Completed' THEN
+                    NEW.completed_at := NOW();
+                WHEN 'Cancelled' THEN
+                    NEW.cancelled_at := NOW();
+                WHEN 'Rescheduled' THEN
+                    NEW.rescheduled_at := NOW();
+                WHEN 'No_Show' THEN
+                    NEW.no_show_at := NOW();
+            END CASE;
+        END IF;
+    END IF;
+
+    RETURN NEW;
+
+EXCEPTION
+    WHEN OTHERS THEN
+        RAISE WARNING 'Erro em func_set_status_timestamp para service_id %: % - %',
+                      NEW.service_id, SQLERRM, SQLSTATE;
+        RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+
+-- ┌─────────────────────────────────────────────────────────────────────────────────────────────┐
 -- │ FUNÇÃO: func_update_appointment_status_counter                                              │
 -- ├─────────────────────────────────────────────────────────────────────────────────────────────┤
 -- │ PROPÓSITO:                                                                                  │
