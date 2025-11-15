@@ -394,6 +394,63 @@ CREATE INDEX IF NOT EXISTS idx_veiculos_placa   ON "3j_veiculos_br"(placa);
 CREATE INDEX IF NOT EXISTS idx_veiculos_tipo    ON "3j_veiculos_br"(tipo_veiculo);
 CREATE INDEX IF NOT EXISTS idx_veiculos_modelo  ON "3j_veiculos_br"(modelo);
 
+-- 3k. Redes Sociais do cliente (1-para-N)
+CREATE TABLE IF NOT EXISTS "3k_social_media" (
+    id                  BIGSERIAL PRIMARY KEY,
+    root_id             BIGINT NOT NULL REFERENCES "3a_customer_root_record"(id) ON DELETE CASCADE,
+
+    -- Tipo de Rede Social (com ícone representativo)
+    rede_social         TEXT NOT NULL CHECK (rede_social IN (
+                            'instagram', 'facebook', 'tiktok', 'twitter_x', 'linkedin',
+                            'youtube', 'pinterest', 'snapchat', 'telegram', 'whatsapp_business',
+                            'threads', 'bluesky', 'discord', 'twitch', 'spotify',
+                            'github', 'behance', 'dribbble', 'medium', 'outro'
+                        )),
+    icone_url           TEXT,                       -- URL customizada para ícone (opcional, sistema pode ter padrão)
+
+    -- Dados do Perfil
+    perfil_url          TEXT NOT NULL,              -- Link completo para o perfil (ex: "https://instagram.com/usuario")
+    username            TEXT,                       -- Nome de usuário na rede (ex: "@usuario" ou "usuario")
+    nome_exibicao       TEXT,                       -- Nome que aparece no perfil (pode ser diferente do username)
+
+    -- Métricas Públicas (opcional - útil para análise)
+    seguidores          INTEGER CHECK (seguidores >= 0),  -- Número de seguidores (se público)
+    verificado_plataforma BOOLEAN DEFAULT FALSE,          -- Se tem selo de verificação da plataforma (✓)
+
+    -- Nível de Confiabilidade dos Dados
+    -- IMPORTANTE: Indica se o perfil realmente pertence ao cliente
+    confiabilidade      TEXT NOT NULL DEFAULT 'nao_verificado' CHECK (confiabilidade IN (
+                            'nao_verificado',      -- ⚪ Não verificado - pode estar incorreto
+                            'auto_descoberto',     -- 🔍 Encontrado por busca automática - precisa confirmação
+                            'informado_cliente',   -- 💬 Cliente informou mas não confirmou
+                            'verificado_equipe',   -- 👁️ Equipe verificou manualmente
+                            'confirmado_cliente'   -- ✅ Cliente confirmou que é dele
+                        )),
+
+    -- Motivo/Observação sobre a confiabilidade
+    confiabilidade_nota TEXT,                       -- Ex: "Perfil abandonado desde 2020", "Cliente confirmou via chat"
+
+    -- Status e Controle
+    is_principal        BOOLEAN NOT NULL DEFAULT FALSE,  -- Rede social principal/preferida do cliente
+    is_ativo            BOOLEAN NOT NULL DEFAULT TRUE,   -- Se o perfil ainda está ativo
+
+    -- Auditoria
+    verificado_em       TIMESTAMPTZ,                -- Data da última verificação
+    verificado_por      TEXT,                       -- Quem verificou (usuário ou sistema)
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    -- Constraints
+    UNIQUE(root_id, rede_social, username)  -- Um cliente não pode ter duplicata de rede+username
+);
+
+-- Índices para performance
+CREATE INDEX IF NOT EXISTS idx_social_media_root_id        ON "3k_social_media"(root_id);
+CREATE INDEX IF NOT EXISTS idx_social_media_rede           ON "3k_social_media"(rede_social);
+CREATE INDEX IF NOT EXISTS idx_social_media_username       ON "3k_social_media"(username) WHERE username IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_social_media_confiabilidade ON "3k_social_media"(confiabilidade);
+CREATE INDEX IF NOT EXISTS idx_social_media_principal      ON "3k_social_media"(root_id) WHERE is_principal = TRUE;
+
 -- ================================================================
 -- NÍVEL 4 - Histórico de Agendamentos
 -- ================================================================
