@@ -379,6 +379,33 @@ CREATE TRIGGER trg_check_form_complete_3i
 -- -------------------------------------------------------------------------------------------------
 
 -- ╔═════════════════════════════════════════════════════════════════════════════════════════════╗
+-- ║ TRIGGER: trg_set_status_timestamp                                                           ║
+-- ╠═════════════════════════════════════════════════════════════════════════════════════════════╣
+-- ║ TABELA ALVO: 4a_customer_service_history                                                    ║
+-- ║ EVENTO: BEFORE INSERT OR UPDATE                                                             ║
+-- ║ FUNÇÃO: func_set_status_timestamp()                                                         ║
+-- ║                                                                                             ║
+-- ║ PROPÓSITO:                                                                                  ║
+-- ║   Preenche automaticamente os campos de timestamp (scheduled_at, confirmed_at, etc.)        ║
+-- ║   quando um agendamento é criado ou tem seu status alterado.                                ║
+-- ║                                                                                             ║
+-- ║ COMPORTAMENTO:                                                                              ║
+-- ║   • INSERT: Define o timestamp do status inicial                                            ║
+-- ║   • UPDATE: Define o timestamp do novo status (preserva os anteriores)                      ║
+-- ║                                                                                             ║
+-- ║ OBSERVAÇÃO:                                                                                 ║
+-- ║   Este trigger executa ANTES (BEFORE) para modificar o registro antes de salvar.            ║
+-- ║   Deve vir antes do trigger de contadores (que executa AFTER).                              ║
+-- ╚═════════════════════════════════════════════════════════════════════════════════════════════╝
+DROP TRIGGER IF EXISTS trg_set_status_timestamp ON "4a_customer_service_history";
+
+CREATE TRIGGER trg_set_status_timestamp
+    BEFORE INSERT OR UPDATE ON "4a_customer_service_history"
+    FOR EACH ROW
+    EXECUTE FUNCTION func_set_status_timestamp();
+
+
+-- ╔═════════════════════════════════════════════════════════════════════════════════════════════╗
 -- ║ TRIGGER: trg_update_appointment_status_counter                                              ║
 -- ╠═════════════════════════════════════════════════════════════════════════════════════════════╣
 -- ║ TABELA ALVO: 4a_customer_service_history                                                    ║
