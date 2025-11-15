@@ -42,7 +42,7 @@ Permitir consultas como:
 
 | Arquivo | Descrição |
 |---------|-----------|
-| `migration_add_status_timestamps.sql` | Adiciona colunas de timestamp à tabela de agendamentos |
+| `schema.sql` | Schema atualizado com colunas de timestamp e índices |
 | `functions.SQL` | Contém `func_set_status_timestamp()` (trigger function) |
 | `triggers.SQL` | Contém `trg_set_status_timestamp` (trigger) |
 | `functions_time_based_counters.sql` | Funções para consultas por período |
@@ -53,23 +53,24 @@ Permitir consultas como:
 
 ## 🚀 Instalação
 
-### 1. Aplicar Migration (Adiciona Colunas)
+### 1. Recriar o Schema
 ```bash
-psql -d seu_banco -f migration_add_status_timestamps.sql
+# O schema.sql JÁ INCLUI as colunas de timestamp!
+psql -d seu_banco -f schema.sql
 ```
 
 Isso irá:
-- ✅ Adicionar 6 colunas de timestamp na tabela `4a_customer_service_history`
+- ✅ Criar/recriar todas as tabelas (incluindo as 6 colunas de timestamp)
 - ✅ Criar índices para performance
-- ✅ Popular dados históricos (usando `created_at` como estimativa)
+- ✅ Configurar todos os ENUMs necessários
 
 ### 2. Aplicar Funções e Triggers
 ```bash
-# Atualizar funções e triggers existentes
+# Funções e triggers
 psql -d seu_banco -f functions.SQL
 psql -d seu_banco -f triggers.SQL
 
-# Adicionar novas funções de consulta por período
+# Funções de consulta por período
 psql -d seu_banco -f functions_time_based_counters.sql
 ```
 
@@ -349,9 +350,9 @@ WHERE id = 123;
 ## 🐛 Troubleshooting
 
 ### Problema: "Column does not exist"
-**Solução:** Execute a migration primeiro:
+**Solução:** Recrie o schema (banco não está em produção):
 ```bash
-psql -d seu_banco -f migration_add_status_timestamps.sql
+psql -d seu_banco -f schema.sql
 ```
 
 ### Problema: "Function does not exist"
@@ -373,10 +374,11 @@ WHERE trigger_name = 'trg_set_status_timestamp';
 
 ## 📝 Notas Importantes
 
-1. **Dados Históricos**: A migration popula timestamps de dados existentes usando `created_at` como estimativa
-2. **Novos Registros**: Todos os novos agendamentos terão timestamps precisos via trigger
-3. **Histórico Preservado**: Timestamps anteriores NUNCA são sobrescritos
-4. **Performance**: Índices garantem queries rápidas mesmo com milhões de registros
+1. **Schema Atualizado**: As colunas de timestamp já estão incluídas no `schema.sql`
+2. **Banco em Desenvolvimento**: Não use ALTER TABLE, recrie o schema completo
+3. **Novos Registros**: Todos os agendamentos terão timestamps precisos via trigger
+4. **Histórico Preservado**: Timestamps anteriores NUNCA são sobrescritos
+5. **Performance**: Índices garantem queries rápidas mesmo com milhões de registros
 
 ---
 
@@ -411,9 +413,9 @@ ORDER BY dia DESC;
 
 ## ✅ Checklist de Instalação
 
-- [ ] Migration aplicada (`migration_add_status_timestamps.sql`)
-- [ ] Funções atualizadas (`functions.SQL`)
-- [ ] Triggers atualizados (`triggers.SQL`)
+- [ ] Schema recriado (`schema.sql`)
+- [ ] Funções aplicadas (`functions.SQL`)
+- [ ] Triggers aplicados (`triggers.SQL`)
 - [ ] Funções de consulta instaladas (`functions_time_based_counters.sql`)
 - [ ] Testes executados com sucesso (`test_time_based_counters.sql`)
 
