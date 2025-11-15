@@ -1,67 +1,67 @@
 -- =================================================================================================
--- BILLING METRICS FUNCTIONS
+-- FUNÇÕES DE MÉTRICAS DE FATURAMENTO
 -- =================================================================================================
--- DESCRIPTION:
---   Functions to query billing filtered by time period.
---   Allows queries like: "How much was billed today?"
---                        "How much was billed in the last 7 days?"
---                        "How much was billed in January?"
+-- DESCRIÇÃO:
+--   Funções para consultar faturamento filtrado por período de tempo.
+--   Permite queries como: "Quanto foi faturado hoje?"
+--                        "Quanto foi faturado nos últimos 7 dias?"
+--                        "Quanto foi faturado em Janeiro?"
 --
--- IMPORTANT:
---   - Only appointments with status 'Completed' are considered in billing
---   - Values are filtered by 'completed_at' timestamp (when marked as completed)
---   - Values in cents (divide by 100 to get currency value)
---   - Currency-agnostic: works with any currency (USD, BRL, EUR, etc.)
+-- IMPORTANTE:
+--   - Apenas atendimentos com status 'Completed' são considerados no faturamento
+--   - Os valores são filtrados pelo timestamp 'completed_at' (quando foi marcado como completado)
+--   - Valores em centavos (dividir por 100 para obter valor em moeda)
+--   - Genérico para qualquer moeda (USD, BRL, EUR, etc.)
 --
--- VERSION: 1.0
--- DATE: 2025-11-15
+-- VERSÃO: 1.0
+-- DATA: 2025-11-15
 -- =================================================================================================
 
 
 -- =================================================================================================
--- MAIN FUNCTION: Billing by Period
+-- FUNÇÃO PRINCIPAL: Faturamento por Período
 -- =================================================================================================
 
 -- ┌─────────────────────────────────────────────────────────────────────────────────────────────┐
--- │ FUNCTION: get_billing_by_period                                                             │
+-- │ FUNÇÃO: get_billing_by_period                                                               │
 -- ├─────────────────────────────────────────────────────────────────────────────────────────────┤
--- │ PURPOSE:                                                                                    │
--- │   Returns total and detailed billing for a specific time period.                            │
+-- │ PROPÓSITO:                                                                                  │
+-- │   Retorna o faturamento total e detalhado para um período de tempo específico.              │
 -- │                                                                                             │
--- │ PARAMETERS:                                                                                 │
--- │   p_inbox_id (UUID) - Inbox ID to filter                                                    │
--- │   p_start_date (TIMESTAMPTZ) - Start date/time of period (inclusive)                        │
--- │   p_end_date (TIMESTAMPTZ) - End date/time of period (exclusive)                            │
+-- │ PARÂMETROS:                                                                                 │
+-- │   p_inbox_id (UUID) - ID da inbox para filtrar                                              │
+-- │   p_start_date (TIMESTAMPTZ) - Data/hora de início do período (inclusivo)                   │
+-- │   p_end_date (TIMESTAMPTZ) - Data/hora de fim do período (exclusivo)                        │
 -- │                                                                                             │
--- │ RETURN:                                                                                     │
--- │   JSONB with structure:                                                                     │
+-- │ RETORNO:                                                                                    │
+-- │   JSONB com estrutura:                                                                      │
 -- │   {                                                                                         │
--- │     "total_billing_cents": 45000,        // Total in cents                                  │
--- │     "total_billing_currency": 450.00,    // Total in currency units (generic)               │
--- │     "completed_count": 15,               // Number of completed appointments                 │
--- │     "average_ticket_cents": 3000,        // Average ticket in cents                          │
--- │     "average_ticket_currency": 30.00,    // Average ticket in currency units                 │
+-- │     "total_billing_cents": 45000,        // Total em centavos                               │
+-- │     "total_billing_currency": 450.00,    // Total em unidades de moeda                      │
+-- │     "completed_count": 15,               // Quantidade de atendimentos completados          │
+-- │     "average_ticket_cents": 3000,        // Ticket médio em centavos                        │
+-- │     "average_ticket_currency": 30.00,    // Ticket médio em unidades de moeda               │
 -- │     "period": {                                                                             │
 -- │       "start": "2025-01-01T00:00:00Z",                                                      │
 -- │       "end": "2025-02-01T00:00:00Z"                                                         │
 -- │     }                                                                                       │
 -- │   }                                                                                         │
 -- │                                                                                             │
--- │ LOGIC:                                                                                      │
--- │   Sums all value_cents from appointments with status 'Completed' that were                  │
--- │   completed (completed_at) within the specified period.                                     │
+-- │ LÓGICA:                                                                                     │
+-- │   Soma todos os value_cents de atendimentos com status 'Completed' que foram               │
+-- │   completados (completed_at) dentro do período especificado.                                │
 -- │                                                                                             │
--- │ USAGE EXAMPLE:                                                                              │
--- │   -- Billing from last 7 days                                                               │
+-- │ EXEMPLO DE USO:                                                                             │
+-- │   -- Faturamento dos últimos 7 dias                                                         │
 -- │   SELECT get_billing_by_period(                                                             │
--- │       'inbox-uuid',                                                                         │
+-- │       'uuid-da-inbox',                                                                      │
 -- │       NOW() - INTERVAL '7 days',                                                            │
 -- │       NOW()                                                                                 │
 -- │   );                                                                                        │
 -- │                                                                                             │
--- │   -- Billing from January 2025                                                              │
+-- │   -- Faturamento de Janeiro de 2025                                                         │
 -- │   SELECT get_billing_by_period(                                                             │
--- │       'inbox-uuid',                                                                         │
+-- │       'uuid-da-inbox',                                                                      │
 -- │       '2025-01-01 00:00:00'::TIMESTAMPTZ,                                                   │
 -- │       '2025-02-01 00:00:00'::TIMESTAMPTZ                                                    │
 -- │   );                                                                                        │
@@ -78,7 +78,7 @@ DECLARE
     v_avg_ticket_cents BIGINT;
     v_result JSONB;
 BEGIN
-    -- Calculate total billing and completed appointments count
+    -- Calcula o total faturado e quantidade de atendimentos completados
     SELECT
         COALESCE(SUM(value_cents), 0),
         COUNT(*)
@@ -91,14 +91,14 @@ BEGIN
       AND value_cents IS NOT NULL
       AND value_cents > 0;
 
-    -- Calculate average ticket
+    -- Calcula o ticket médio
     IF v_completed_count > 0 THEN
         v_avg_ticket_cents := v_total_cents / v_completed_count;
     ELSE
         v_avg_ticket_cents := 0;
     END IF;
 
-    -- Build JSON result
+    -- Monta o resultado em JSON
     v_result := jsonb_build_object(
         'total_billing_cents', v_total_cents,
         'total_billing_currency', ROUND(v_total_cents::NUMERIC / 100, 2),
@@ -117,17 +117,17 @@ $$ LANGUAGE plpgsql;
 
 
 -- =================================================================================================
--- CONVENIENCE FUNCTIONS: Common Periods
+-- FUNÇÕES DE CONVENIÊNCIA: Períodos Comuns
 -- =================================================================================================
 
 -- ┌─────────────────────────────────────────────────────────────────────────────────────────────┐
--- │ FUNCTION: get_billing_today                                                                 │
+-- │ FUNÇÃO: get_billing_today                                                                   │
 -- ├─────────────────────────────────────────────────────────────────────────────────────────────┤
--- │ PURPOSE:                                                                                    │
--- │   Returns billing from current day (from 00:00:00 until now).                               │
+-- │ PROPÓSITO:                                                                                  │
+-- │   Retorna o faturamento do dia atual (de 00:00:00 até agora).                               │
 -- │                                                                                             │
--- │ USAGE EXAMPLE:                                                                              │
--- │   SELECT get_billing_today('inbox-uuid');                                                   │
+-- │ EXEMPLO DE USO:                                                                             │
+-- │   SELECT get_billing_today('uuid-inbox');                                                   │
 -- └─────────────────────────────────────────────────────────────────────────────────────────────┘
 CREATE OR REPLACE FUNCTION get_billing_today(
     p_inbox_id UUID
@@ -136,7 +136,7 @@ RETURNS JSONB AS $$
 DECLARE
     v_today_start TIMESTAMPTZ;
 BEGIN
-    -- Start of today (00:00:00)
+    -- Início do dia de hoje (00:00:00)
     v_today_start := date_trunc('day', NOW());
 
     RETURN get_billing_by_period(
@@ -149,17 +149,17 @@ $$ LANGUAGE plpgsql;
 
 
 -- ┌─────────────────────────────────────────────────────────────────────────────────────────────┐
--- │ FUNCTION: get_billing_last_n_days                                                           │
+-- │ FUNÇÃO: get_billing_last_n_days                                                             │
 -- ├─────────────────────────────────────────────────────────────────────────────────────────────┤
--- │ PURPOSE:                                                                                    │
--- │   Returns billing from last N days.                                                         │
+-- │ PROPÓSITO:                                                                                  │
+-- │   Retorna o faturamento dos últimos N dias.                                                 │
 -- │                                                                                             │
--- │ USAGE EXAMPLE:                                                                              │
--- │   -- Last 7 days                                                                            │
--- │   SELECT get_billing_last_n_days('inbox-uuid', 7);                                          │
+-- │ EXEMPLO DE USO:                                                                             │
+-- │   -- Últimos 7 dias                                                                         │
+-- │   SELECT get_billing_last_n_days('uuid-inbox', 7);                                          │
 -- │                                                                                             │
--- │   -- Last 30 days                                                                           │
--- │   SELECT get_billing_last_n_days('inbox-uuid', 30);                                         │
+-- │   -- Últimos 30 dias                                                                        │
+-- │   SELECT get_billing_last_n_days('uuid-inbox', 30);                                         │
 -- └─────────────────────────────────────────────────────────────────────────────────────────────┘
 CREATE OR REPLACE FUNCTION get_billing_last_n_days(
     p_inbox_id UUID,
@@ -177,22 +177,22 @@ $$ LANGUAGE plpgsql;
 
 
 -- ┌─────────────────────────────────────────────────────────────────────────────────────────────┐
--- │ FUNCTION: get_billing_specific_month                                                        │
+-- │ FUNÇÃO: get_billing_specific_month                                                          │
 -- ├─────────────────────────────────────────────────────────────────────────────────────────────┤
--- │ PURPOSE:                                                                                    │
--- │   Returns billing from a specific month.                                                    │
+-- │ PROPÓSITO:                                                                                  │
+-- │   Retorna o faturamento de um mês específico.                                               │
 -- │                                                                                             │
--- │ PARAMETERS:                                                                                 │
--- │   p_inbox_id (UUID) - Inbox ID                                                              │
--- │   p_year (INT) - Year (e.g. 2025)                                                           │
--- │   p_month (INT) - Month (1-12)                                                              │
+-- │ PARÂMETROS:                                                                                 │
+-- │   p_inbox_id (UUID) - ID da inbox                                                           │
+-- │   p_year (INT) - Ano (ex: 2025)                                                             │
+-- │   p_month (INT) - Mês (1-12)                                                                │
 -- │                                                                                             │
--- │ USAGE EXAMPLE:                                                                              │
--- │   -- January 2025                                                                           │
--- │   SELECT get_billing_specific_month('inbox-uuid', 2025, 1);                                 │
+-- │ EXEMPLO DE USO:                                                                             │
+-- │   -- Janeiro de 2025                                                                        │
+-- │   SELECT get_billing_specific_month('uuid-inbox', 2025, 1);                                 │
 -- │                                                                                             │
--- │   -- December 2024                                                                          │
--- │   SELECT get_billing_specific_month('inbox-uuid', 2024, 12);                                │
+-- │   -- Dezembro de 2024                                                                       │
+-- │   SELECT get_billing_specific_month('uuid-inbox', 2024, 12);                                │
 -- └─────────────────────────────────────────────────────────────────────────────────────────────┘
 CREATE OR REPLACE FUNCTION get_billing_specific_month(
     p_inbox_id UUID,
@@ -204,15 +204,15 @@ DECLARE
     v_start_date TIMESTAMPTZ;
     v_end_date TIMESTAMPTZ;
 BEGIN
-    -- Month validation
+    -- Validação do mês
     IF p_month < 1 OR p_month > 12 THEN
-        RAISE EXCEPTION 'Invalid month: %. Must be between 1 and 12.', p_month;
+        RAISE EXCEPTION 'Mês inválido: %. Deve estar entre 1 e 12.', p_month;
     END IF;
 
-    -- First day of month at 00:00:00
+    -- Primeiro dia do mês às 00:00:00
     v_start_date := make_timestamptz(p_year, p_month, 1, 0, 0, 0);
 
-    -- First day of next month at 00:00:00
+    -- Primeiro dia do mês seguinte às 00:00:00
     v_end_date := v_start_date + INTERVAL '1 month';
 
     RETURN get_billing_by_period(
@@ -225,35 +225,35 @@ $$ LANGUAGE plpgsql;
 
 
 -- =================================================================================================
--- LTV (LIFETIME VALUE) FUNCTIONS PER CUSTOMER
+-- FUNÇÕES DE LTV (LIFETIME VALUE) POR CLIENTE
 -- =================================================================================================
 
 -- ┌─────────────────────────────────────────────────────────────────────────────────────────────┐
--- │ FUNCTION: get_customer_ltv                                                                  │
+-- │ FUNÇÃO: get_customer_ltv                                                                    │
 -- ├─────────────────────────────────────────────────────────────────────────────────────────────┤
--- │ PURPOSE:                                                                                    │
--- │   Returns the LTV (Lifetime Value) of a specific customer.                                  │
+-- │ PROPÓSITO:                                                                                  │
+-- │   Retorna o LTV (Lifetime Value) de um cliente específico.                                  │
 -- │                                                                                             │
--- │ PARAMETERS:                                                                                 │
--- │   p_root_id (BIGINT) - Customer record ID (3a_customer_root_record)                         │
+-- │ PARÂMETROS:                                                                                 │
+-- │   p_root_id (BIGINT) - ID da ficha do cliente (3a_customer_root_record)                     │
 -- │                                                                                             │
--- │ RETURN:                                                                                     │
--- │   JSONB with structure:                                                                     │
+-- │ RETORNO:                                                                                    │
+-- │   JSONB com estrutura:                                                                      │
 -- │   {                                                                                         │
 -- │     "root_id": 123,                                                                         │
 -- │     "client_id": "CT456",                                                                   │
--- │     "treatment_name": "John Doe",                                                           │
--- │     "total_spent_cents": 60000,          // Total spent in cents                            │
--- │     "total_spent_currency": 600.00,      // Total spent in currency units                   │
--- │     "total_completed_appointments": 3,                                                      │
--- │     "average_ticket_cents": 20000,       // Average ticket in cents                          │
--- │     "average_ticket_currency": 200.00,   // Average ticket in currency units                 │
+-- │     "treatment_name": "João Silva",                                                         │
+-- │     "total_spent_cents": 60000,          // Total gasto em centavos                         │
+-- │     "total_spent_currency": 600.00,      // Total gasto em moeda                            │
+-- │     "total_completed_appointments": 3,   // Quantidade de atendimentos                      │
+-- │     "average_ticket_cents": 20000,       // Ticket médio em centavos                        │
+-- │     "average_ticket_currency": 200.00,   // Ticket médio em moeda                           │
 -- │     "first_purchase_at": "2025-01-15T10:00:00Z",                                            │
 -- │     "last_purchase_at": "2025-11-10T14:30:00Z",                                             │
--- │     "customer_lifetime_days": 299        // Days since first purchase                        │
+-- │     "customer_lifetime_days": 299        // Dias desde a primeira compra                    │
 -- │   }                                                                                         │
 -- │                                                                                             │
--- │ USAGE EXAMPLE:                                                                              │
+-- │ EXEMPLO DE USO:                                                                             │
 -- │   SELECT get_customer_ltv(123);                                                             │
 -- └─────────────────────────────────────────────────────────────────────────────────────────────┘
 CREATE OR REPLACE FUNCTION get_customer_ltv(
@@ -263,7 +263,7 @@ RETURNS JSONB AS $$
 DECLARE
     v_result JSONB;
 BEGIN
-    -- Fetch customer data
+    -- Busca dados do cliente
     SELECT
         jsonb_build_object(
             'root_id', cr.id,
@@ -294,9 +294,9 @@ BEGIN
     FROM "3a_customer_root_record" cr
     WHERE cr.id = p_root_id;
 
-    -- If customer not found
+    -- Se não encontrou o cliente
     IF v_result IS NULL THEN
-        RAISE EXCEPTION 'Customer with root_id % not found', p_root_id;
+        RAISE EXCEPTION 'Cliente com root_id % não encontrado', p_root_id;
     END IF;
 
     RETURN v_result;
@@ -305,24 +305,24 @@ $$ LANGUAGE plpgsql;
 
 
 -- ┌─────────────────────────────────────────────────────────────────────────────────────────────┐
--- │ FUNCTION: get_top_customers_by_ltv                                                          │
+-- │ FUNÇÃO: get_top_customers_by_ltv                                                            │
 -- ├─────────────────────────────────────────────────────────────────────────────────────────────┤
--- │ PURPOSE:                                                                                    │
--- │   Returns top N customers ordered by LTV (highest to lowest).                               │
+-- │ PROPÓSITO:                                                                                  │
+-- │   Retorna os top N clientes ordenados por LTV (maior para menor).                           │
 -- │                                                                                             │
--- │ PARAMETERS:                                                                                 │
--- │   p_inbox_id (UUID) - Inbox ID to filter                                                    │
--- │   p_limit (INT) - Number of customers to return (default: 10)                               │
+-- │ PARÂMETROS:                                                                                 │
+-- │   p_inbox_id (UUID) - ID da inbox para filtrar                                              │
+-- │   p_limit (INT) - Quantidade de clientes a retornar (padrão: 10)                            │
 -- │                                                                                             │
--- │ RETURN:                                                                                     │
--- │   JSONB array with top customers ordered by total_spent_cents                               │
+-- │ RETORNO:                                                                                    │
+-- │   JSONB array com os top clientes ordenados por total_spent_cents                           │
 -- │                                                                                             │
--- │ USAGE EXAMPLE:                                                                              │
--- │   -- Top 10 customers                                                                       │
--- │   SELECT get_top_customers_by_ltv('inbox-uuid', 10);                                        │
+-- │ EXEMPLO DE USO:                                                                             │
+-- │   -- Top 10 clientes                                                                        │
+-- │   SELECT get_top_customers_by_ltv('uuid-inbox', 10);                                        │
 -- │                                                                                             │
--- │   -- Top 50 customers                                                                       │
--- │   SELECT get_top_customers_by_ltv('inbox-uuid', 50);                                        │
+-- │   -- Top 50 clientes                                                                        │
+-- │   SELECT get_top_customers_by_ltv('uuid-inbox', 50);                                        │
 -- └─────────────────────────────────────────────────────────────────────────────────────────────┘
 CREATE OR REPLACE FUNCTION get_top_customers_by_ltv(
     p_inbox_id UUID,
@@ -367,16 +367,16 @@ $$ LANGUAGE plpgsql;
 
 
 -- =================================================================================================
--- CONVENIENCE VIEW: Consolidated Customer Billing Summary
+-- VIEW DE CONVENIÊNCIA: Visão Consolidada de Faturamento por Cliente
 -- =================================================================================================
 
 -- ┌─────────────────────────────────────────────────────────────────────────────────────────────┐
 -- │ VIEW: vw_customer_billing_summary                                                           │
 -- ├─────────────────────────────────────────────────────────────────────────────────────────────┤
--- │ PURPOSE:                                                                                    │
--- │   View showing consolidated billing summary per customer.                                   │
+-- │ PROPÓSITO:                                                                                  │
+-- │   View que mostra um resumo consolidado de faturamento por cliente.                         │
 -- │                                                                                             │
--- │ COLUMNS:                                                                                    │
+-- │ COLUNAS:                                                                                    │
 -- │   • root_id, client_id, treatment_name                                                      │
 -- │   • total_spent_cents, total_spent_currency                                                 │
 -- │   • total_completed_appointments                                                            │
@@ -384,13 +384,13 @@ $$ LANGUAGE plpgsql;
 -- │   • first_purchase_at, last_purchase_at                                                     │
 -- │   • customer_lifetime_days                                                                  │
 -- │                                                                                             │
--- │ USAGE EXAMPLE:                                                                              │
--- │   -- View all customers ordered by LTV                                                      │
+-- │ EXEMPLO DE USO:                                                                             │
+-- │   -- Ver todos os clientes ordenados por LTV                                                │
 -- │   SELECT * FROM vw_customer_billing_summary                                                 │
 -- │   ORDER BY total_spent_cents DESC                                                           │
 -- │   LIMIT 20;                                                                                 │
 -- │                                                                                             │
--- │   -- View customers who spent more than 100000 cents (1000 currency units)                  │
+-- │   -- Ver clientes que gastaram mais de R$ 1000                                              │
 -- │   SELECT * FROM vw_customer_billing_summary                                                 │
 -- │   WHERE total_spent_currency > 1000                                                         │
 -- │   ORDER BY total_spent_cents DESC;                                                          │
@@ -429,17 +429,17 @@ ORDER BY cr.total_spent_cents DESC;
 
 
 -- =================================================================================================
--- END OF FUNCTIONS
+-- FIM DAS FUNÇÕES
 -- =================================================================================================
--- To test the functions:
+-- Para testar as funções:
 --
--- BILLING BY TIME:
+-- FATURAMENTO POR TEMPO:
 --   SELECT get_billing_today('your-inbox-uuid');
 --   SELECT get_billing_last_n_days('your-inbox-uuid', 7);
 --   SELECT get_billing_last_n_days('your-inbox-uuid', 30);
 --   SELECT get_billing_specific_month('your-inbox-uuid', 2025, 1);
 --
--- LTV PER CUSTOMER:
+-- LTV POR CLIENTE:
 --   SELECT get_customer_ltv(123);
 --   SELECT get_top_customers_by_ltv('your-inbox-uuid', 10);
 --   SELECT * FROM vw_customer_billing_summary LIMIT 20;
