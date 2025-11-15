@@ -15,13 +15,13 @@ DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'workflow_status') THEN
         CREATE TYPE workflow_status AS ENUM (
-            '⚪',  -- Inativo/Neutro
-            '⚫',  -- Bloqueado/Desabilitado
-            '🧪',  -- Em Teste/Experimental
-            '🟢',  -- Ativo/Operacional
-            '🟡',  -- Atenção/Aguardando
-            '🔴',  -- Erro/Problema
-            '🚫'   -- Proibido/Suspenso
+            '⚪',  -- *Coringa: Inativo/Neutro
+            '⚫',  -- *Coringa: Bloqueado/Desabilitado
+            '🧪',  -- *Coringa: Em Teste/Experimental
+            '🟢',  -- *Coringa: Ativo/Operacional
+            '🟡',  -- *Coringa: Atenção/Aguardando
+            '🔴',  -- *Coringa: Erro/Problema
+            '🚫'   -- *Coringa: Proibido/Suspenso
         );
     END IF;
 END$$;
