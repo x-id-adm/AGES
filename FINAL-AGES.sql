@@ -1,5 +1,5 @@
 BEGIN;
-DO $$
+DO $do_block$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'workflow_status') THEN
         CREATE TYPE workflow_status AS ENUM (
@@ -12,8 +12,8 @@ BEGIN
             '🚫'   -- *Coringa: Proibido/Suspenso
         );
     END IF;
-END$$;
-DO $$
+END$do_block$;
+DO $do_block$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'message_sender_type') THEN
         CREATE TYPE message_sender_type AS ENUM (
@@ -23,7 +23,7 @@ BEGIN
             'system'       -- Mensagem do sistema
         );
     END IF;
-END$$;
+END$do_block$;
 CREATE TABLE IF NOT EXISTS "0a_inbox_whatsapp" (
     inbox_id           UUID PRIMARY KEY NOT NULL,
     status_workflow    workflow_status NOT NULL DEFAULT '🟢',
@@ -383,7 +383,7 @@ CREATE OR REPLACE FUNCTION func_upsert_contact_from_webhook(
   p_tags                 JSONB DEFAULT '[]'::jsonb,
   p_condensed_memory     JSONB DEFAULT '[]'::jsonb
 )
-RETURNS void AS $$
+RETURNS void AS $function_body$
 DECLARE
   v_is_new_contact BOOLEAN;
 BEGIN
@@ -463,9 +463,9 @@ EXCEPTION
   WHEN OTHERS THEN
     RAISE EXCEPTION 'Erro na função func_upsert_contact_from_webhook: % - %', SQLERRM, SQLSTATE;
 END;
-$$ LANGUAGE plpgsql;
+$function_body$ LANGUAGE plpgsql;
 CREATE OR REPLACE FUNCTION func_sync_owner_to_cell_sheet()
-RETURNS TRIGGER AS $$
+RETURNS TRIGGER AS $function_body$
 DECLARE
     v_wallet_id UUID;
 BEGIN
@@ -501,9 +501,9 @@ BEGIN
         updated_at = NOW();
     RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$function_body$ LANGUAGE plpgsql;
 CREATE OR REPLACE FUNCTION func_generate_friendly_client_id()
-RETURNS TRIGGER AS $$
+RETURNS TRIGGER AS $function_body$
 DECLARE
     new_count INT;
 BEGIN
@@ -520,9 +520,9 @@ BEGIN
     NEW.client_id := 'CT' || new_count::text;
     RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$function_body$ LANGUAGE plpgsql;
 CREATE OR REPLACE FUNCTION func_generate_friendly_service_id()
-RETURNS TRIGGER AS $$
+RETURNS TRIGGER AS $function_body$
 DECLARE
     new_count INT;
 BEGIN
@@ -540,9 +540,9 @@ BEGIN
     NEW.service_id := 'AT' || new_count::text;
     RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$function_body$ LANGUAGE plpgsql;
 CREATE OR REPLACE FUNCTION func_ensure_first_is_primary()
-RETURNS TRIGGER AS $$
+RETURNS TRIGGER AS $function_body$
 DECLARE
     v_count INT;
 BEGIN
@@ -554,9 +554,9 @@ BEGIN
     END IF;
     RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$function_body$ LANGUAGE plpgsql;
 CREATE OR REPLACE FUNCTION func_generate_ulid()
-RETURNS TEXT AS $$
+RETURNS TEXT AS $function_body$
 DECLARE
     unix_time BIGINT;
     randomness TEXT := '';
@@ -575,9 +575,9 @@ BEGIN
     END LOOP;
     RETURN output || randomness;
 END;
-$$ LANGUAGE plpgsql VOLATILE;
+$function_body$ LANGUAGE plpgsql VOLATILE;
 CREATE OR REPLACE FUNCTION func_auto_populate_message_fields()
-RETURNS TRIGGER AS $$
+RETURNS TRIGGER AS $function_body$
 BEGIN
     IF (NEW.source_message_id IS NULL OR NEW.source_message_id = '') AND
        NEW.sender_type IN ('ai_agent', 'human_agent', 'system') THEN
@@ -588,14 +588,14 @@ BEGIN
     END IF;
     RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$function_body$ LANGUAGE plpgsql;
 CREATE OR REPLACE FUNCTION update_updated_at_column()
-RETURNS TRIGGER AS $$
+RETURNS TRIGGER AS $function_body$
 BEGIN
     NEW.updated_at = NOW();
     RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$function_body$ LANGUAGE plpgsql;
 CREATE OR REPLACE FUNCTION func_upsert_contact_from_webhook(
   p_inbox_id             UUID,
   p_owner_wallet_id      UUID,
@@ -630,7 +630,7 @@ CREATE OR REPLACE FUNCTION func_upsert_contact_from_webhook(
   p_tags                 JSONB DEFAULT '[]'::jsonb,
   p_condensed_memory     JSONB DEFAULT '[]'::jsonb
 )
-RETURNS void AS $$
+RETURNS void AS $function_body$
 DECLARE
   v_is_new_contact BOOLEAN;
 BEGIN
@@ -710,9 +710,9 @@ EXCEPTION
   WHEN OTHERS THEN
     RAISE EXCEPTION 'Erro na função func_upsert_contact_from_webhook: % - %', SQLERRM, SQLSTATE;
 END;
-$$ LANGUAGE plpgsql;
+$function_body$ LANGUAGE plpgsql;
 CREATE OR REPLACE FUNCTION func_sync_owner_to_cell_sheet()
-RETURNS TRIGGER AS $$
+RETURNS TRIGGER AS $function_body$
 DECLARE
     v_wallet_id UUID;
 BEGIN
@@ -748,9 +748,9 @@ BEGIN
         updated_at = NOW();
     RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$function_body$ LANGUAGE plpgsql;
 CREATE OR REPLACE FUNCTION func_generate_friendly_client_id()
-RETURNS TRIGGER AS $$
+RETURNS TRIGGER AS $function_body$
 DECLARE
     new_count INT;
 BEGIN
@@ -767,9 +767,9 @@ BEGIN
     NEW.client_id := 'CT' || new_count::text;
     RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$function_body$ LANGUAGE plpgsql;
 CREATE OR REPLACE FUNCTION func_generate_friendly_service_id()
-RETURNS TRIGGER AS $$
+RETURNS TRIGGER AS $function_body$
 DECLARE
     new_count INT;
 BEGIN
@@ -787,9 +787,9 @@ BEGIN
     NEW.service_id := 'AT' || new_count::text;
     RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$function_body$ LANGUAGE plpgsql;
 CREATE OR REPLACE FUNCTION func_ensure_first_is_primary()
-RETURNS TRIGGER AS $$
+RETURNS TRIGGER AS $function_body$
 DECLARE
     v_count INT;
 BEGIN
@@ -801,9 +801,9 @@ BEGIN
     END IF;
     RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$function_body$ LANGUAGE plpgsql;
 CREATE OR REPLACE FUNCTION func_generate_ulid()
-RETURNS TEXT AS $$
+RETURNS TEXT AS $function_body$
 DECLARE
     unix_time BIGINT;
     randomness TEXT := '';
@@ -822,9 +822,9 @@ BEGIN
     END LOOP;
     RETURN output || randomness;
 END;
-$$ LANGUAGE plpgsql VOLATILE;
+$function_body$ LANGUAGE plpgsql VOLATILE;
 CREATE OR REPLACE FUNCTION func_auto_populate_message_fields()
-RETURNS TRIGGER AS $$
+RETURNS TRIGGER AS $function_body$
 BEGIN
     IF (NEW.source_message_id IS NULL OR NEW.source_message_id = '') AND
        NEW.sender_type IN ('ai_agent', 'human_agent', 'system') THEN
@@ -835,16 +835,16 @@ BEGIN
     END IF;
     RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$function_body$ LANGUAGE plpgsql;
 CREATE OR REPLACE FUNCTION update_updated_at_column()
-RETURNS TRIGGER AS $$
+RETURNS TRIGGER AS $function_body$
 BEGIN
     NEW.updated_at = NOW();
     RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$function_body$ LANGUAGE plpgsql;
 CREATE OR REPLACE FUNCTION func_check_complete_form(p_root_id BIGINT)
-RETURNS BOOLEAN AS $$
+RETURNS BOOLEAN AS $function_body$
 DECLARE
     v_inbox_id UUID;
     v_required_config JSONB;
@@ -989,9 +989,9 @@ EXCEPTION
                       p_root_id, SQLERRM, SQLSTATE;
         RETURN FALSE;
 END;
-$$ LANGUAGE plpgsql;
+$function_body$ LANGUAGE plpgsql;
 CREATE OR REPLACE FUNCTION func_update_form_counter()
-RETURNS TRIGGER AS $$
+RETURNS TRIGGER AS $function_body$
 DECLARE
     v_root_id BIGINT;
     v_inbox_id UUID;
@@ -1042,9 +1042,9 @@ EXCEPTION
                       v_root_id, SQLERRM, SQLSTATE;
         RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$function_body$ LANGUAGE plpgsql;
 CREATE OR REPLACE FUNCTION func_set_status_timestamp()
-RETURNS TRIGGER AS $$
+RETURNS TRIGGER AS $function_body$
 BEGIN
     IF (TG_OP = 'INSERT') THEN
         CASE NEW.service_status
@@ -1086,9 +1086,9 @@ EXCEPTION
                       NEW.service_id, SQLERRM, SQLSTATE;
         RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$function_body$ LANGUAGE plpgsql;
 CREATE OR REPLACE FUNCTION func_update_appointment_status_counter()
-RETURNS TRIGGER AS $$
+RETURNS TRIGGER AS $function_body$
 DECLARE
     v_inbox_id UUID;
     v_old_status TEXT;
@@ -1232,13 +1232,13 @@ EXCEPTION
                       v_inbox_id, SQLERRM, SQLSTATE;
         RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$function_body$ LANGUAGE plpgsql;
 CREATE OR REPLACE FUNCTION get_billing_by_period(
     p_inbox_id UUID,
     p_start_date TIMESTAMPTZ,
     p_end_date TIMESTAMPTZ
 )
-RETURNS JSONB AS $$
+RETURNS JSONB AS $function_body$
 DECLARE
     v_total_cents BIGINT;
     v_completed_count INT;
@@ -1274,11 +1274,11 @@ BEGIN
     );
     RETURN v_result;
 END;
-$$ LANGUAGE plpgsql;
+$function_body$ LANGUAGE plpgsql;
 CREATE OR REPLACE FUNCTION get_billing_today(
     p_inbox_id UUID
 )
-RETURNS JSONB AS $$
+RETURNS JSONB AS $function_body$
 DECLARE
     v_today_start TIMESTAMPTZ;
 BEGIN
@@ -1289,12 +1289,12 @@ BEGIN
         NOW()
     );
 END;
-$$ LANGUAGE plpgsql;
+$function_body$ LANGUAGE plpgsql;
 CREATE OR REPLACE FUNCTION get_billing_last_n_days(
     p_inbox_id UUID,
     p_days INT
 )
-RETURNS JSONB AS $$
+RETURNS JSONB AS $function_body$
 BEGIN
     RETURN get_billing_by_period(
         p_inbox_id,
@@ -1302,13 +1302,13 @@ BEGIN
         NOW()
     );
 END;
-$$ LANGUAGE plpgsql;
+$function_body$ LANGUAGE plpgsql;
 CREATE OR REPLACE FUNCTION get_billing_specific_month(
     p_inbox_id UUID,
     p_year INT,
     p_month INT
 )
-RETURNS JSONB AS $$
+RETURNS JSONB AS $function_body$
 DECLARE
     v_start_date TIMESTAMPTZ;
     v_end_date TIMESTAMPTZ;
@@ -1324,11 +1324,11 @@ BEGIN
         v_end_date
     );
 END;
-$$ LANGUAGE plpgsql;
+$function_body$ LANGUAGE plpgsql;
 CREATE OR REPLACE FUNCTION get_customer_ltv(
     p_root_id BIGINT
 )
-RETURNS JSONB AS $$
+RETURNS JSONB AS $function_body$
 DECLARE
     v_result JSONB;
 BEGIN
@@ -1366,12 +1366,12 @@ BEGIN
     END IF;
     RETURN v_result;
 END;
-$$ LANGUAGE plpgsql;
+$function_body$ LANGUAGE plpgsql;
 CREATE OR REPLACE FUNCTION get_top_customers_by_ltv(
     p_inbox_id UUID,
     p_limit INT DEFAULT 10
 )
-RETURNS JSONB AS $$
+RETURNS JSONB AS $function_body$
 DECLARE
     v_result JSONB;
 BEGIN
@@ -1405,7 +1405,7 @@ BEGIN
     ) top_customers;
     RETURN COALESCE(v_result, '[]'::jsonb);
 END;
-$$ LANGUAGE plpgsql;
+$function_body$ LANGUAGE plpgsql;
 CREATE OR REPLACE VIEW vw_customer_billing_summary AS
 SELECT
     cr.id as root_id,
@@ -1442,7 +1442,7 @@ CREATE OR REPLACE FUNCTION func_get_appointment_counters_by_period(
     p_start_date TIMESTAMPTZ,
     p_end_date TIMESTAMPTZ
 )
-RETURNS JSONB AS $$
+RETURNS JSONB AS $function_body$
 DECLARE
     v_result JSONB;
 BEGIN
@@ -1465,12 +1465,12 @@ BEGIN
       AND created_at < p_end_date;
     RETURN v_result;
 END;
-$$ LANGUAGE plpgsql;
+$function_body$ LANGUAGE plpgsql;
 CREATE OR REPLACE FUNCTION func_get_counters_last_n_days(
     p_inbox_id UUID,
     p_days INT
 )
-RETURNS JSONB AS $$
+RETURNS JSONB AS $function_body$
 BEGIN
     RETURN func_get_appointment_counters_by_period(
         p_inbox_id,
@@ -1478,13 +1478,13 @@ BEGIN
         NOW()
     );
 END;
-$$ LANGUAGE plpgsql;
+$function_body$ LANGUAGE plpgsql;
 CREATE OR REPLACE FUNCTION func_get_counters_specific_month(
     p_inbox_id UUID,
     p_year INT,
     p_month INT
 )
-RETURNS JSONB AS $$
+RETURNS JSONB AS $function_body$
 DECLARE
     v_start_date TIMESTAMPTZ;
     v_end_date TIMESTAMPTZ;
@@ -1497,14 +1497,14 @@ BEGIN
         v_end_date
     );
 END;
-$$ LANGUAGE plpgsql;
+$function_body$ LANGUAGE plpgsql;
 CREATE OR REPLACE FUNCTION func_count_status_changes(
     p_inbox_id UUID,
     p_status TEXT,
     p_start_date TIMESTAMPTZ,
     p_end_date TIMESTAMPTZ
 )
-RETURNS INTEGER AS $$
+RETURNS INTEGER AS $function_body$
 DECLARE
     v_count INTEGER;
     v_column_name TEXT;
@@ -1533,7 +1533,7 @@ BEGIN
     USING p_inbox_id, p_start_date, p_end_date;
     RETURN COALESCE(v_count, 0);
 END;
-$$ LANGUAGE plpgsql;
+$function_body$ LANGUAGE plpgsql;
 CREATE OR REPLACE VIEW vw_appointment_status_timeline AS
 SELECT
     service_id,
@@ -1565,7 +1565,7 @@ CREATE TRIGGER trg_generate_service_id
     BEFORE INSERT ON "4a_customer_service_history"
     FOR EACH ROW
     EXECUTE FUNCTION func_generate_friendly_service_id();
-DO $
+DO $do_block$
 DECLARE
     t text;
 BEGIN
@@ -1660,7 +1660,7 @@ CREATE TRIGGER trg_update_appointment_status_counter
     FOR EACH ROW
     EXECUTE FUNCTION func_update_appointment_status_counter();
 CREATE OR REPLACE FUNCTION update_customer_ltv()
-RETURNS TRIGGER AS $$
+RETURNS TRIGGER AS $function_body$
 DECLARE
     v_should_update BOOLEAN := FALSE;
 BEGIN
@@ -1699,7 +1699,7 @@ BEGIN
         (SELECT total_spent_cents FROM "3a_customer_root_record" WHERE id = NEW.root_id);
     RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$function_body$ LANGUAGE plpgsql;
 DROP TRIGGER IF EXISTS trigger_update_customer_ltv ON "4a_customer_service_history";
 CREATE TRIGGER trigger_update_customer_ltv
     AFTER INSERT OR UPDATE OF service_status
@@ -1709,7 +1709,7 @@ CREATE TRIGGER trigger_update_customer_ltv
 CREATE OR REPLACE FUNCTION recalculate_customer_ltv(
     p_root_id BIGINT
 )
-RETURNS JSONB AS $$
+RETURNS JSONB AS $function_body$
 DECLARE
     v_total_cents BIGINT;
     v_completed_count INT;
@@ -1750,11 +1750,11 @@ BEGIN
     );
     RETURN v_result;
 END;
-$$ LANGUAGE plpgsql;
+$function_body$ LANGUAGE plpgsql;
 CREATE OR REPLACE FUNCTION recalculate_all_ltv_for_inbox(
     p_inbox_id UUID
 )
-RETURNS JSONB AS $$
+RETURNS JSONB AS $function_body$
 DECLARE
     v_customer_count INT;
     v_total_billing BIGINT := 0;
@@ -1782,5 +1782,5 @@ BEGIN
     );
     RETURN v_result;
 END;
-$$ LANGUAGE plpgsql;
+$function_body$ LANGUAGE plpgsql;
 COMMIT;
