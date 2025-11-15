@@ -109,6 +109,15 @@ CREATE TABLE IF NOT EXISTS "0b_inbox_counters" (
     ) STORED,
     no_show_rate      DECIMAL(5,4) GENERATED ALWAYS AS (
         CASE WHEN scheduled_count > 0 THEN ROUND(no_show_count::DECIMAL / scheduled_count, 4) ELSE 0 END
+    ) STORED,
+
+    -- Taxas de conversão do funil de atendimento (contatos -> fichas -> agendamentos)
+    -- Formato: 0.7500 = 75.00% (fichas/contatos)
+    form_rate         DECIMAL(5,4) GENERATED ALWAYS AS (
+        CASE WHEN contact_count > 0 THEN ROUND(form_count::DECIMAL / contact_count, 4) ELSE 0 END
+    ) STORED,
+    scheduling_rate   DECIMAL(5,4) GENERATED ALWAYS AS (
+        CASE WHEN contact_count > 0 THEN ROUND(scheduling_count::DECIMAL / contact_count, 4) ELSE 0 END
     ) STORED
 );
 
